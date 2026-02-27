@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from jose import jwt, JWTError
+import jwt
 
 from app.config import get_settings
 
@@ -35,7 +35,7 @@ def create_token(
 def verify_token(token: str, public_key: str, expected_aud: str | None = None) -> dict:
     """Verify a JWT with a public key. Returns the decoded payload.
 
-    Raises jose.JWTError on invalid/expired tokens.
+    Raises jwt.PyJWTError on invalid/expired tokens.
     """
     options = {}
     if expected_aud is None:

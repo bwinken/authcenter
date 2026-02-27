@@ -19,7 +19,7 @@ from pathlib import Path
 from functools import lru_cache
 
 from fastapi import Cookie, Depends, HTTPException, status
-from jose import jwt, JWTError
+import jwt
 
 # === Configuration ===
 # Each AI App must set these values
@@ -57,7 +57,7 @@ def get_current_user(access_token: str | None = Cookie(default=None)) -> dict:
             algorithms=[ALGORITHM],
             audience=APP_ID,
         )
-    except JWTError as e:
+    except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {e}",
@@ -98,7 +98,7 @@ def require_scopes(required: list[str]):
 #
 # @app.get("/auth/callback")
 # async def auth_callback(code: str = Query(...)):
-#     \"\"\"Exchange the authorization code for a JWT token.\"\"\"
+#     """Exchange the authorization code for a JWT token."""
 #     async with httpx.AsyncClient() as client:
 #         resp = await client.post("http://localhost:8000/auth/token", json={
 #             "code": code,
