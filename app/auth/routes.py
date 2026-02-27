@@ -78,7 +78,7 @@ async def login_page(
 @router.post("/login")
 async def login_submit(
     request: Request,
-    staff_id: str = Form(...),
+    employee_name: str = Form(...),
     password: str = Form(...),
     app_id: str = Form(...),
     redirect_uri: str = Form(...),
@@ -96,6 +96,8 @@ async def login_submit(
     5. 檢查該員工是否有權存取目標 App
     6. 產生 authorization code，302 重導回 App 的 redirect_uri
     """
+    employee_name = service.normalize_employee_name(employee_name)
+
     apps = load_registered_apps()
     app_info = apps.get(app_id)
     app_name = app_info.get("name", app_id) if app_info else "Unknown"
@@ -121,12 +123,12 @@ async def login_submit(
 
     # Authenticate
     staff, error = await service.authenticate(
-        mysql_session, sqlite_session, staff_id, password
+        mysql_session, sqlite_session, employee_name, password
     )
 
     if error == "needs_registration":
         # Redirect to registration request page — user verifies identity, then webhook to admin
-        reg_token = await service.generate_registration_token(sqlite_session, staff_id, app_id, redirect_uri)
+        reg_token = await service.generate_registration_token(sqlite_session, employee_name, app_id, redirect_uri)
         return RedirectResponse(f"/auth/register-request?token={reg_token}", status_code=303)
 
     if error:
@@ -138,7 +140,7 @@ async def login_submit(
         return _error_response(reason)
 
     # Generate authorization code (SQLite-backed) and redirect back to app
-    code = await service.generate_auth_code(sqlite_session, staff.staff_id, app_id)
+    code = await service.generate_auth_code(sqlite_session, staff.employee_name, app_id)
     return RedirectResponse(f"{redirect_uri}?code={code}", status_code=303)
 
 
@@ -159,7 +161,7 @@ async def register_request_page(
     if data is None:
         return templates.TemplateResponse("register_request.html", {
             "request": request,
-            "staff_id": "",
+            "employee_name": "",
             "token": "",
             "error": "連結已過期或無效，請從登入頁面重新操作。",
             "success": False,
@@ -167,7 +169,7 @@ async def register_request_page(
 
     return templates.TemplateResponse("register_request.html", {
         "request": request,
-        "staff_id": data["staff_id"],
+        "employee_name": data["employee_name"],
         "token": token,
         "error": None,
         "success": False,
@@ -177,7 +179,7 @@ async def register_request_page(
 @router.post("/register-request")
 async def register_request_submit(
     request: Request,
-    staff_id: str = Form(...),
+    employee_name: str = Form(...),
     ext: str = Form(...),
     dept_code: str = Form(...),
     token: str = Form(...),
@@ -192,11 +194,13 @@ async def register_request_submit(
     3. 核對分機號碼與部門代碼是否匹配
     4. 核對正確 → 發送 Teams Webhook 通知管理員
     """
+    employee_name = service.normalize_employee_name(employee_name)
+
     data = await service.consume_registration_token(sqlite_session, token)
     if data is None:
         return templates.TemplateResponse("register_request.html", {
             "request": request,
-            "staff_id": staff_id,
+            "employee_name": employee_name,
             "token": "",
             "error": "連結已過期或無效，請從登入頁面重新操作。",
             "success": False,
@@ -204,16 +208,16 @@ async def register_request_submit(
 
     ctx = {
         "request": request,
-        "staff_id": staff_id,
+        "employee_name": employee_name,
         "token": token,
         "error": None,
         "success": False,
     }
 
     # Verify staff info from MySQL
-    staff = await service.verify_staff(mysql_session, staff_id)
+    staff = await service.verify_staff(mysql_session, employee_name)
     if staff is None:
-        ctx["error"] = "員工編號不存在。"
+        ctx["error"] = "使用者名稱不存在。"
         return templates.TemplateResponse("register_request.html", ctx)
 
     # Verify ext and dept_code match
@@ -261,7 +265,7 @@ async def register_page(
     if data is None:
         return templates.TemplateResponse("register.html", {
             "request": request,
-            "staff_id": "",
+            "employee_name": "",
             "token": "",
             "error": "註冊連結已過期或無效，請聯繫管理員重新發送。",
             "success": False,
@@ -269,7 +273,7 @@ async def register_page(
 
     return templates.TemplateResponse("register.html", {
         "request": request,
-        "staff_id": data["staff_id"],
+        "employee_name": data["employee_name"],
         "token": token,
         "error": None,
         "success": False,
@@ -279,7 +283,7 @@ async def register_page(
 @router.post("/register")
 async def register_submit(
     request: Request,
-    staff_id: str = Form(...),
+    employee_name: str = Form(...),
     password: str = Form(...),
     confirm_password: str = Form(...),
     token: str = Form(...),
@@ -291,17 +295,19 @@ async def register_submit(
     驗證流程：
     1. 驗證 registration token 有效
     2. 確認兩次密碼輸入一致且長度 >= 8
-    3. 查 MySQL 確認員工編號存在
+    3. 查 MySQL 確認使用者名稱存在
     4. 查 SQLite 確認帳號尚未註冊
     5. 建立帳號（bcrypt 雜湊密碼）
     6. 導回登入頁繼續 OAuth 流程
     """
+    employee_name = service.normalize_employee_name(employee_name)
+
     # Validate registration token
     data = await service.consume_registration_token(sqlite_session, token)
     if data is None:
         return templates.TemplateResponse("register.html", {
             "request": request,
-            "staff_id": staff_id,
+            "employee_name": employee_name,
             "token": "",
             "error": "註冊連結已過期或無效，請從登入頁面重新操作。",
             "success": False,
@@ -312,7 +318,7 @@ async def register_submit(
 
     ctx = {
         "request": request,
-        "staff_id": staff_id,
+        "employee_name": employee_name,
         "token": token,
         "error": None,
         "success": False,
@@ -328,19 +334,19 @@ async def register_submit(
         return templates.TemplateResponse("register.html", ctx)
 
     # Verify staff exists in MySQL
-    staff = await service.verify_staff(mysql_session, staff_id)
+    staff = await service.verify_staff(mysql_session, employee_name)
     if staff is None:
-        ctx["error"] = "員工編號不存在。"
+        ctx["error"] = "使用者名稱不存在。"
         return templates.TemplateResponse("register.html", ctx)
 
     # Check if already registered
-    exists = await service.check_account_exists(sqlite_session, staff_id)
+    exists = await service.check_account_exists(sqlite_session, employee_name)
     if exists:
         ctx["error"] = "此帳號已經註冊過了。"
         return templates.TemplateResponse("register.html", ctx)
 
     # Create account
-    await service.register_account(sqlite_session, staff_id, password)
+    await service.register_account(sqlite_session, employee_name, password)
 
     # Invalidate the registration token
     await service.invalidate_registration_token(sqlite_session, token)
@@ -381,18 +387,18 @@ async def exchange_token(
         return JSONResponse({"error": "invalid_client"}, status_code=401)
 
     # Consume the authorization code (SQLite-backed)
-    staff_id = await service.consume_auth_code(sqlite_session, body.code, body.app_id)
-    if staff_id is None:
+    employee_name = await service.consume_auth_code(sqlite_session, body.code, body.app_id)
+    if employee_name is None:
         return JSONResponse({"error": "invalid_grant"}, status_code=400)
 
     # Fetch staff info to build token payload
-    staff = await service.verify_staff(mysql_session, staff_id)
+    staff = await service.verify_staff(mysql_session, employee_name)
     if staff is None:
         return JSONResponse({"error": "staff_not_found"}, status_code=400)
 
     scopes = service.map_scopes(staff.level)
     token = create_token(
-        sub=staff.staff_id,
+        sub=staff.employee_name,
         name=staff.name,
         dept=staff.dept_code,
         scopes=scopes,
@@ -421,14 +427,14 @@ async def change_password_page(
     if user is None:
         return templates.TemplateResponse("change_password.html", {
             "request": request,
-            "staff_id": "",
+            "employee_name": "",
             "error": "請先登入後再修改密碼。",
             "success": False,
         })
 
     return templates.TemplateResponse("change_password.html", {
         "request": request,
-        "staff_id": user["sub"],
+        "employee_name": user["sub"],
         "error": None,
         "success": False,
     })
@@ -446,7 +452,7 @@ async def change_password_submit(
     """處理修改密碼表單。
 
     驗證流程：
-    1. 從 Cookie 中的 JWT 取得 staff_id
+    1. 從 Cookie 中的 JWT 取得 employee_name
     2. 確認新密碼兩次輸入一致且長度 >= 8
     3. 驗證舊密碼正確
     4. 更新為新密碼（bcrypt 雜湊）
@@ -455,15 +461,15 @@ async def change_password_submit(
     if user is None:
         return templates.TemplateResponse("change_password.html", {
             "request": request,
-            "staff_id": "",
+            "employee_name": "",
             "error": "請先登入後再修改密碼。",
             "success": False,
         })
 
-    staff_id = user["sub"]
+    employee_name = user["sub"]
     ctx = {
         "request": request,
-        "staff_id": staff_id,
+        "employee_name": employee_name,
         "error": None,
         "success": False,
     }
@@ -481,7 +487,7 @@ async def change_password_submit(
         return templates.TemplateResponse("change_password.html", ctx)
 
     error = await service.change_password(
-        sqlite_session, staff_id, old_password, new_password
+        sqlite_session, employee_name, old_password, new_password
     )
     if error:
         ctx["error"] = error
@@ -508,7 +514,7 @@ def _verify_cookie(access_token: str | None) -> dict | None:
 async def forgot_password_page(request: Request):
     """渲染忘記密碼頁面。
 
-    提供表單讓員工輸入編號，送出後系統將透過 Microsoft Teams
+    提供表單讓員工輸入姓名，送出後系統將透過 Microsoft Teams
     Webhook 通知管理員協助重設密碼（不會自動重設）。
     """
     return templates.TemplateResponse("forgot_password.html", {
@@ -521,15 +527,15 @@ async def forgot_password_page(request: Request):
 @router.post("/forgot-password")
 async def forgot_password_submit(
     request: Request,
-    staff_id: str = Form(...),
+    employee_name: str = Form(...),
     mysql_session: AsyncSession = Depends(get_mysql_session),
 ):
     """處理忘記密碼請求（含頻率限制）。
 
     查詢 MySQL 確認員工存在後，發送 Microsoft Teams Webhook
-    通知管理員。Payload 包含員工姓名、編號、部門與權限等級。
-    不會自動重設密碼，需由管理員手動處理。
+    通知管理員。不會自動重設密碼，需由管理員手動處理。
     """
+    employee_name = service.normalize_employee_name(employee_name)
     ctx = {"request": request, "error": None, "success": False}
 
     # Rate limit check
@@ -539,9 +545,9 @@ async def forgot_password_submit(
         ctx["error"] = "請求過於頻繁，請 5 分鐘後再試。"
         return templates.TemplateResponse("forgot_password.html", ctx)
 
-    staff = await service.verify_staff(mysql_session, staff_id)
+    staff = await service.verify_staff(mysql_session, employee_name)
     if staff is None:
-        ctx["error"] = "員工編號不存在。"
+        ctx["error"] = "使用者名稱不存在。"
         return templates.TemplateResponse("forgot_password.html", ctx)
 
     sent = await send_forgot_password_notification(staff)

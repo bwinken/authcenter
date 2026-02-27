@@ -15,7 +15,7 @@ class SQLiteBase(DeclarativeBase):
 class UserAccount(SQLiteBase):
     __tablename__ = "user_accounts"
 
-    staff_id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    employee_name: Mapped[str] = mapped_column(String(50), primary_key=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -35,4 +35,5 @@ class AppAccessRule(SQLiteBase):
 # --- MySQL model (IT Master DB - read only, reflected) ---
 # We use raw SQL queries for the MySQL staff table to avoid
 # needing a separate DeclarativeBase bound to the MySQL engine.
-# The staff table schema: staff_id (PK), name, dept_code, level
+# The staff table schema: staff_id (PK), name, dept_code, level, ext
+# staff_id maps to "employee_name" in our system (e.g. kane.beh)

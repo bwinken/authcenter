@@ -102,7 +102,7 @@ sequenceDiagram
     U->>C: 4. GET /auth/login?app_id=X&redirect_uri=Y
     C-->>U: 5. 回傳登入頁面 HTML
 
-    U->>C: 6. POST /auth/login {staff_id, password}
+    U->>C: 6. POST /auth/login {employee_name, password}
 
     Note over C,S: 7. Auth Center 內部驗證（見下方）
     C->>M: ① 查詢員工是否在職
@@ -144,7 +144,7 @@ sequenceDiagram
     participant T as Microsoft Teams
     participant A as 管理員
 
-    U->>C: POST /auth/login {staff_id, password}
+    U->>C: POST /auth/login {employee_name, password}
     C->>M: 查詢員工
     M-->>C: 員工存在 ✓
     C->>S: 查詢帳號
@@ -163,7 +163,7 @@ sequenceDiagram
     C-->>U: 「身份驗證通過，已通知管理員。」
 
     Note over A: 管理員收到 Teams 通知
-    A->>A: python scripts/generate_register_link.py EMP001
+    A->>A: python scripts/generate_register_link.py kane.beh
     A->>U: 將註冊連結發送至員工信箱（手動）
 
     Note over U,C: 員工收到信件，點擊註冊連結
@@ -185,7 +185,7 @@ sequenceDiagram
     participant C as Auth Center
 
     Note over U,C: ── 情境 A：帳密錯誤 ──
-    U->>C: POST /auth/login {staff_id, password}
+    U->>C: POST /auth/login {employee_name, password}
     C-->>U: 回傳登入頁 + 錯誤訊息（員工不存在 / 密碼錯誤 / 權限不足）
     Note over U: 使用者停留在 Auth Center，不會產生 code
 
@@ -212,11 +212,11 @@ sequenceDiagram
     U->>C: GET /auth/forgot-password
     C-->>U: 回傳忘記密碼頁面
 
-    U->>C: POST /auth/forgot-password {staff_id}
+    U->>C: POST /auth/forgot-password {employee_name}
     C->>M: 查詢員工資料
     M-->>C: 回傳 name, dept_code, level
     C->>T: POST Webhook（Adaptive Card）
-    Note over T: 通知內容：員工編號、姓名、部門、Level
+    Note over T: 通知內容：使用者名稱、姓名、部門、Level
     T-->>C: 200 OK
     C-->>U: 「已通知管理員，請等待處理。」
     Note over U: 不會自動重設密碼，需管理員手動處理
@@ -228,7 +228,7 @@ sequenceDiagram
 
 | 步驟 | 操作 | 資料來源 | 失敗結果 |
 |------|------|----------|----------|
-| ① | 查詢員工是否在職 | MySQL `staff` 表 | 回傳「員工編號不存在，請確認後重試。」 |
+| ① | 查詢員工是否在職 | MySQL `staff` 表 | 回傳「使用者名稱不存在，請確認後重試。」 |
 | ② | 查詢帳號是否已註冊 | SQLite `user_accounts` 表 | 303 重導至 `/auth/register-request`（身份驗證頁） |
 | ③ | bcrypt 比對密碼 | SQLite `user_accounts` 表 | 回傳「密碼錯誤，請重新輸入。」 |
 | ④ | 檢查 App 存取規則 | SQLite `app_access_rules` 表 | 回傳「部門無權」或「等級不足」 |
@@ -245,7 +245,7 @@ Authorization Code 是一個 **一次性、短期有效的隨機字串**（如 `
 | **格式** | `secrets.token_urlsafe(32)` 產生的 43 字元隨機字串 |
 | **有效期** | 5 分鐘，過期自動作廢 |
 | **使用次數** | 一次性，兌換 Token 後立即銷毀 |
-| **綁定對象** | 與 `staff_id` + `app_id` 綁定，不可跨 App 使用 |
+| **綁定對象** | 與 `employee_name` + `app_id` 綁定，不可跨 App 使用 |
 | **傳遞方式** | 透過 URL query parameter（`?code=xxx`）傳回 App |
 
 **為什麼不直接回傳 JWT？**
@@ -315,7 +315,7 @@ graph LR
 
 ```json
 {
-  "sub": "EMP001",
+  "sub": "kane.beh",    // employee_name (lowercase)
   "name": "王小明",
   "dept": "IT",
   "scopes": ["read", "write"],
@@ -327,7 +327,7 @@ graph LR
 
 | 欄位 | 說明 |
 |------|------|
-| `sub` | 員工編號（來自 MySQL staff_id） |
+| `sub` | 使用者名稱（來自 MySQL staff_id，如 kane.beh） |
 | `name` | 員工姓名 |
 | `dept` | 部門代碼 |
 | `scopes` | 權限範圍清單，由員工等級自動映射 |
@@ -609,7 +609,7 @@ Content-Type: application/json
 Auth Center 收到後會：
 1. 查找 `app_id` 是否已註冊 → 否則回 `401 invalid_client`
 2. 用 bcrypt 比對 `client_secret` 與 `apps.yaml` 中的 hash → 不匹配則回 `401 invalid_client`
-3. 從 SQLite 中取出 `code` 對應的 `staff_id` + `app_id` → 不存在或過期回 `400 invalid_grant`
+3. 從 SQLite 中取出 `code` 對應的 `employee_name` + `app_id` → 不存在或過期回 `400 invalid_grant`
 4. 驗證 code 中的 `app_id` 與請求的 `app_id` 一致 → 不一致回 `400 invalid_grant`
 5. 消耗 code（一次性使用，立即刪除）
 6. 查詢 MySQL 取得員工資料 → 查無資料回 `400 staff_not_found`
@@ -647,7 +647,7 @@ def get_current_user(access_token: str | None = Cookie(default=None)) -> dict:
         raise HTTPException(401, f"Invalid token: {e}")
 
     return payload
-    # payload 內容：{"sub": "EMP001", "name": "王小明", "dept": "IT", "scopes": ["read", "write"], "aud": "my_new_app", ...}
+    # payload 內容：{"sub": "kane.beh", "name": "王小明", "dept": "IT", "scopes": ["read", "write"], "aud": "my_new_app", ...}
 
 
 # 使用 FastAPI Depends 保護路由
@@ -721,7 +721,7 @@ flowchart TD
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
-| `staff_id` | VARCHAR(50) PK | 員工編號 |
+| `employee_name` | VARCHAR(50) PK | 使用者名稱 |
 | `name` | VARCHAR | 姓名 |
 | `dept_code` | VARCHAR | 部門代碼 |
 | `level` | INT | 權限等級 (1-3) |
@@ -733,7 +733,7 @@ flowchart TD
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
-| `staff_id` | VARCHAR(50) PK | 員工編號 |
+| `employee_name` | VARCHAR(50) PK | 使用者名稱 |
 | `password_hash` | VARCHAR(255) | bcrypt 雜湊 |
 | `created_at` | DATETIME | 建立時間 |
 | `updated_at` | DATETIME | 更新時間 |
@@ -752,7 +752,7 @@ flowchart TD
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `code` | VARCHAR(64) PK | 隨機授權碼 |
-| `staff_id` | VARCHAR(50) | 員工編號 |
+| `employee_name` | VARCHAR(50) | 使用者名稱 |
 | `app_id` | VARCHAR(100) | 目標 App |
 | `expires_at` | REAL | 過期時間（Unix timestamp，5 分鐘） |
 
@@ -761,7 +761,7 @@ flowchart TD
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `token` | VARCHAR(64) PK | 隨機令牌 |
-| `staff_id` | VARCHAR(50) | 員工編號 |
+| `employee_name` | VARCHAR(50) | 使用者名稱 |
 | `app_id` | VARCHAR(100) | 來源 App（可為空） |
 | `redirect_uri` | TEXT | 註冊完成後的導回 URI |
 | `expires_at` | REAL | 過期時間（登入產生 10 分鐘 / 管理員產生 24 小時） |
@@ -774,15 +774,15 @@ flowchart TD
 
 ```bash
 # 基本用法
-python scripts/generate_register_link.py EMP001
+python scripts/generate_register_link.py kane.beh
 
 # 帶 App 資訊（註冊完成後可直接導回 App 登入）
-python scripts/generate_register_link.py EMP001 --app-id ai_chat_app --redirect-uri http://localhost:8001/callback
+python scripts/generate_register_link.py kane.beh --app-id ai_chat_app --redirect-uri http://localhost:8001/callback
 ```
 
 產出範例：
 ```
-[OK] Registration link generated for EMP001
+[OK] Registration link generated for kane.beh
      Expires in 24 hours
 
      http://localhost:8000/auth/register?token=abc123...
@@ -796,10 +796,10 @@ Please send this link to the employee's email.
 
 ```bash
 # 自動產生隨機密碼
-python scripts/reset_password.py EMP001
+python scripts/reset_password.py kane.beh
 
 # 指定密碼
-python scripts/reset_password.py EMP001 --password NewPass123
+python scripts/reset_password.py kane.beh --password NewPass123
 ```
 
 ## 安全機制

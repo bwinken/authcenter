@@ -33,6 +33,11 @@ def record_attempt(client_ip: str) -> None:
     _rate_limit_store[client_ip].append(time.time())
 
 
+def normalize_employee_name(name: str) -> str:
+    """Normalize employee name to lowercase, stripped of whitespace."""
+    return name.lower().strip()
+
+
 # ─── Registration Tokens (SQLite-backed) ─────────────────────
 REGISTRATION_TOKEN_TTL = 600           # 10 minutes (login → register-request flow)
 ADMIN_REGISTRATION_TOKEN_TTL = 86400   # 24 hours (admin-generated link)
@@ -40,7 +45,7 @@ ADMIN_REGISTRATION_TOKEN_TTL = 86400   # 24 hours (admin-generated link)
 
 async def generate_registration_token(
     sqlite_session: AsyncSession,
-    staff_id: str,
+    employee_name: str,
     app_id: str,
     redirect_uri: str,
     ttl: int = REGISTRATION_TOKEN_TTL,
@@ -51,10 +56,10 @@ async def generate_registration_token(
     expires_at = time.time() + ttl
     await sqlite_session.execute(
         text(
-            "INSERT INTO registration_tokens (token, staff_id, app_id, redirect_uri, expires_at) "
-            "VALUES (:token, :sid, :aid, :uri, :exp)"
+            "INSERT INTO registration_tokens (token, employee_name, app_id, redirect_uri, expires_at) "
+            "VALUES (:token, :ename, :aid, :uri, :exp)"
         ),
-        {"token": token, "sid": staff_id, "aid": app_id, "uri": redirect_uri, "exp": expires_at},
+        {"token": token, "ename": employee_name, "aid": app_id, "uri": redirect_uri, "exp": expires_at},
     )
     await sqlite_session.commit()
     return token
@@ -67,7 +72,7 @@ async def consume_registration_token(
     await _cleanup_expired_registration_tokens(sqlite_session)
     result = await sqlite_session.execute(
         text(
-            "SELECT staff_id, app_id, redirect_uri, expires_at "
+            "SELECT employee_name, app_id, redirect_uri, expires_at "
             "FROM registration_tokens WHERE token = :token"
         ),
         {"token": token},
@@ -75,7 +80,7 @@ async def consume_registration_token(
     row = result.fetchone()
     if row is None or time.time() > row[3]:
         return None
-    return {"staff_id": row[0], "app_id": row[1], "redirect_uri": row[2]}
+    return {"employee_name": row[0], "app_id": row[1], "redirect_uri": row[2]}
 
 
 async def invalidate_registration_token(
@@ -103,53 +108,53 @@ SCOPE_MAP = {
 }
 
 
-async def verify_staff(mysql_session: AsyncSession, staff_id: str) -> StaffInfo | None:
+async def verify_staff(mysql_session: AsyncSession, employee_name: str) -> StaffInfo | None:
     """Check IT Master DB (MySQL) to confirm staff exists. Returns StaffInfo or None."""
     result = await mysql_session.execute(
-        text("SELECT staff_id, name, dept_code, level, ext FROM staff WHERE staff_id = :sid"),
-        {"sid": staff_id},
+        text("SELECT staff_id, name, dept_code, level, ext FROM staff WHERE staff_id = :ename"),
+        {"ename": employee_name},
     )
     row = result.fetchone()
     if row is None:
         return None
     return StaffInfo(
-        staff_id=row[0], name=row[1], dept_code=row[2], level=row[3], ext=row[4] or ""
+        employee_name=row[0], name=row[1], dept_code=row[2], level=row[3], ext=row[4] or ""
     )
 
 
-async def check_account_exists(sqlite_session: AsyncSession, staff_id: str) -> bool:
+async def check_account_exists(sqlite_session: AsyncSession, employee_name: str) -> bool:
     """Check if a user account already exists in the local Auth DB."""
     result = await sqlite_session.execute(
-        text("SELECT 1 FROM user_accounts WHERE staff_id = :sid"),
-        {"sid": staff_id},
+        text("SELECT 1 FROM user_accounts WHERE employee_name = :ename"),
+        {"ename": employee_name},
     )
     return result.fetchone() is not None
 
 
 async def register_account(
-    sqlite_session: AsyncSession, staff_id: str, password: str
+    sqlite_session: AsyncSession, employee_name: str, password: str
 ) -> None:
     """Create a new user account with a bcrypt-hashed password."""
     password_hash = bcrypt.hash(password)
     await sqlite_session.execute(
         text(
-            "INSERT INTO user_accounts (staff_id, password_hash) VALUES (:sid, :ph)"
+            "INSERT INTO user_accounts (employee_name, password_hash) VALUES (:ename, :ph)"
         ),
-        {"sid": staff_id, "ph": password_hash},
+        {"ename": employee_name, "ph": password_hash},
     )
     await sqlite_session.commit()
 
 
 async def change_password(
     sqlite_session: AsyncSession,
-    staff_id: str,
+    employee_name: str,
     old_password: str,
     new_password: str,
 ) -> str:
     """Change a user's password. Returns empty string on success, error message on failure."""
     result = await sqlite_session.execute(
-        text("SELECT password_hash FROM user_accounts WHERE staff_id = :sid"),
-        {"sid": staff_id},
+        text("SELECT password_hash FROM user_accounts WHERE employee_name = :ename"),
+        {"ename": employee_name},
     )
     row = result.fetchone()
     if row is None:
@@ -162,9 +167,9 @@ async def change_password(
     await sqlite_session.execute(
         text(
             "UPDATE user_accounts SET password_hash = :ph, updated_at = datetime('now') "
-            "WHERE staff_id = :sid"
+            "WHERE employee_name = :ename"
         ),
-        {"ph": new_hash, "sid": staff_id},
+        {"ph": new_hash, "ename": employee_name},
     )
     await sqlite_session.commit()
     return ""
@@ -173,7 +178,7 @@ async def change_password(
 async def authenticate(
     mysql_session: AsyncSession,
     sqlite_session: AsyncSession,
-    staff_id: str,
+    employee_name: str,
     password: str,
 ) -> tuple[StaffInfo | None, str]:
     """Full authentication flow.
@@ -184,19 +189,19 @@ async def authenticate(
     - Needs registration: (staff_info, "needs_registration")
     """
     # 1. Verify staff exists in MySQL
-    staff = await verify_staff(mysql_session, staff_id)
+    staff = await verify_staff(mysql_session, employee_name)
     if staff is None:
-        return None, "員工編號不存在，請確認後重試。"
+        return None, "使用者名稱不存在，請確認後重試。"
 
     # 2. Check if account exists in SQLite
-    has_account = await check_account_exists(sqlite_session, staff_id)
+    has_account = await check_account_exists(sqlite_session, employee_name)
     if not has_account:
         return staff, "needs_registration"
 
     # 3. Verify password
     result = await sqlite_session.execute(
-        text("SELECT password_hash FROM user_accounts WHERE staff_id = :sid"),
-        {"sid": staff_id},
+        text("SELECT password_hash FROM user_accounts WHERE employee_name = :ename"),
+        {"ename": employee_name},
     )
     row = result.fetchone()
     if row is None or not bcrypt.verify(password, row[0]):
@@ -241,7 +246,7 @@ async def check_app_access(
 
 
 async def generate_auth_code(
-    sqlite_session: AsyncSession, staff_id: str, app_id: str
+    sqlite_session: AsyncSession, employee_name: str, app_id: str
 ) -> str:
     """Generate a one-time authorization code (stored in SQLite, 5-min TTL)."""
     await _cleanup_expired_codes(sqlite_session)
@@ -249,10 +254,10 @@ async def generate_auth_code(
     expires_at = time.time() + AUTH_CODE_TTL
     await sqlite_session.execute(
         text(
-            "INSERT INTO auth_codes (code, staff_id, app_id, expires_at) "
-            "VALUES (:code, :sid, :aid, :exp)"
+            "INSERT INTO auth_codes (code, employee_name, app_id, expires_at) "
+            "VALUES (:code, :ename, :aid, :exp)"
         ),
-        {"code": code, "sid": staff_id, "aid": app_id, "exp": expires_at},
+        {"code": code, "ename": employee_name, "aid": app_id, "exp": expires_at},
     )
     await sqlite_session.commit()
     return code
@@ -263,11 +268,11 @@ async def consume_auth_code(
 ) -> str | None:
     """Validate and consume an authorization code.
 
-    Returns staff_id if valid, None otherwise.
+    Returns employee_name if valid, None otherwise.
     """
     await _cleanup_expired_codes(sqlite_session)
     result = await sqlite_session.execute(
-        text("SELECT staff_id, app_id, expires_at FROM auth_codes WHERE code = :code"),
+        text("SELECT employee_name, app_id, expires_at FROM auth_codes WHERE code = :code"),
         {"code": code},
     )
     row = result.fetchone()
@@ -281,12 +286,12 @@ async def consume_auth_code(
     )
     await sqlite_session.commit()
 
-    staff_id, stored_app_id, expires_at = row[0], row[1], row[2]
+    employee_name, stored_app_id, expires_at = row[0], row[1], row[2]
     if stored_app_id != app_id:
         return None
     if time.time() > expires_at:
         return None
-    return staff_id
+    return employee_name
 
 
 async def _cleanup_expired_codes(sqlite_session: AsyncSession) -> None:

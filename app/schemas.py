@@ -4,14 +4,14 @@ from pydantic import BaseModel
 
 
 class LoginRequest(BaseModel):
-    staff_id: str
+    employee_name: str
     password: str
     app_id: str
     redirect_uri: str
 
 
 class RegisterRequest(BaseModel):
-    staff_id: str
+    employee_name: str
     password: str
     confirm_password: str
 
@@ -29,11 +29,11 @@ class TokenResponse(BaseModel):
 
 
 class ForgotPasswordRequest(BaseModel):
-    staff_id: str
+    employee_name: str
 
 
 class StaffInfo(BaseModel):
-    staff_id: str
+    employee_name: str
     name: str
     dept_code: str
     level: int

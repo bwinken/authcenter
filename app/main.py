@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
     async with sqlite_engine.begin() as conn:
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS user_accounts (
-                staff_id      VARCHAR(50)  PRIMARY KEY,
+                employee_name VARCHAR(50)  PRIMARY KEY,
                 password_hash VARCHAR(255) NOT NULL,
                 created_at    DATETIME     DEFAULT CURRENT_TIMESTAMP,
                 updated_at    DATETIME     DEFAULT CURRENT_TIMESTAMP
@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS auth_codes (
                 code       VARCHAR(64)  PRIMARY KEY,
-                staff_id   VARCHAR(50)  NOT NULL,
+                employee_name VARCHAR(50) NOT NULL,
                 app_id     VARCHAR(100) NOT NULL,
                 expires_at REAL         NOT NULL
             )
@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS registration_tokens (
                 token      VARCHAR(64)  PRIMARY KEY,
-                staff_id   VARCHAR(50)  NOT NULL,
+                employee_name VARCHAR(50) NOT NULL,
                 app_id     VARCHAR(100) DEFAULT '',
                 redirect_uri TEXT       DEFAULT '',
                 expires_at REAL         NOT NULL

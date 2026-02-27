@@ -54,7 +54,7 @@ async def send_forgot_password_notification(staff: StaffInfo) -> bool:
         title="🔑 密碼重設請求",
         subtitle="有員工請求重設密碼，請管理員協助處理。",
         facts=[
-            {"title": "員工編號", "value": staff.staff_id},
+            {"title": "使用者名稱", "value": staff.employee_name},
             {"title": "姓名", "value": staff.name},
             {"title": "部門", "value": staff.dept_code},
             {"title": "權限等級", "value": f"Level {staff.level}"},
@@ -66,7 +66,7 @@ async def send_registration_request_notification(staff: StaffInfo, app_name: str
     """Send a new-user registration request notification to Microsoft Teams.
 
     Admin should generate a registration link and send it to the employee.
-    Command: python scripts/generate_register_link.py <staff_id>
+    Command: python scripts/generate_register_link.py <employee_name>
     """
     return await _send_adaptive_card(
         title="📋 新員工註冊請求",
@@ -75,11 +75,11 @@ async def send_registration_request_notification(staff: StaffInfo, app_name: str
             "執行指令產生註冊連結並發送至員工信箱。"
         ),
         facts=[
-            {"title": "員工編號", "value": staff.staff_id},
+            {"title": "使用者名稱", "value": staff.employee_name},
             {"title": "姓名", "value": staff.name},
             {"title": "部門", "value": staff.dept_code},
             {"title": "權限等級", "value": f"Level {staff.level}"},
             {"title": "欲存取的 App", "value": app_name},
-            {"title": "產生連結指令", "value": f"python scripts/generate_register_link.py {staff.staff_id}"},
+            {"title": "產生連結指令", "value": f"python scripts/generate_register_link.py {staff.employee_name}"},
         ],
     )
