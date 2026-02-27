@@ -58,10 +58,21 @@ def get_settings() -> Settings:
     return Settings()
 
 
-def load_registered_apps() -> dict[str, dict]:
-    """Load registered apps from config/apps.yaml. Returns dict keyed by app_id."""
-    apps_file = BASE_DIR / "config" / "apps.yaml"
-    with open(apps_file) as f:
-        data = yaml.safe_load(f)
+_apps_cache: dict[str, dict] = {}
+_apps_mtime: float = 0.0
 
-    return {app["app_id"]: app for app in data.get("apps", [])}
+
+def load_registered_apps() -> dict[str, dict]:
+    """Load registered apps from config/apps.yaml with file mtime caching.
+
+    Re-reads the file only when its modification time changes.
+    """
+    global _apps_cache, _apps_mtime
+    apps_file = BASE_DIR / "config" / "apps.yaml"
+    mtime = apps_file.stat().st_mtime
+    if mtime != _apps_mtime:
+        with open(apps_file) as f:
+            data = yaml.safe_load(f)
+        _apps_cache = {app["app_id"]: app for app in data.get("apps", [])}
+        _apps_mtime = mtime
+    return _apps_cache
