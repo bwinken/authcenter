@@ -1,0 +1,21 @@
+# Registered AI Applications
+# Each app must have: app_id, client_secret, redirect_uri, name
+#
+# client_secret should be a bcrypt hash in production.
+# Use passlib: from passlib.hash import bcrypt; bcrypt.hash("your_secret")
+
+apps:
+  - app_id: "ai_chat_app"
+    client_secret: "$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAeYK0W3txFZbJBo7RGdEiqwB3sYfNLMbW"  # plaintext: chat_secret_123
+    redirect_uri: "http://localhost:8001/auth/callback"
+    name: "AI Chat Assistant"
+
+  - app_id: "ai_report_app"
+    client_secret: "$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAeYK0W3txFZbJBo7RGdEiqwB3sYfNLMbW"  # plaintext: report_secret_456
+    redirect_uri: "http://localhost:8002/auth/callback"
+    name: "AI Report Generator"
+
+  - app_id: "test_app"
+    client_secret: "$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAeYK0W3txFZbJBo7RGdEiqwB3sYfNLMbW"  # plaintext: test_secret
+    redirect_uri: "http://localhost:8001/callback"
+    name: "Test Application"

@@ -1,0 +1,29 @@
+# Environment
+.env
+.venv/
+
+# RSA Keys
+keys/private.pem
+keys/public.pem
+
+# Database
+*.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

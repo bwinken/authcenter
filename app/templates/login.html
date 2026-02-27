@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}登入 - Auth Center{% endblock %}
+{% block content %}
+<div class="logo">&#128274;</div>
+<h1>Auth Center</h1>
+<p class="subtitle">登入以存取 {{ app_name }}</p>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<form method="POST" action="/auth/login">
+    <input type="hidden" name="app_id" value="{{ app_id }}">
+    <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+
+    <div class="form-group">
+        <label for="staff_id">員工編號</label>
+        <input type="text" id="staff_id" name="staff_id" placeholder="請輸入員工編號" required autofocus>
+    </div>
+
+    <div class="form-group">
+        <label for="password">密碼</label>
+        <input type="password" id="password" name="password" placeholder="請輸入密碼" required>
+    </div>
+
+    <button type="submit" class="btn btn-primary">登入</button>
+</form>
+
+<div class="links">
+    <a href="/auth/forgot-password">忘記密碼？</a>
+</div>
+{% endblock %}
