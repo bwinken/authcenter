@@ -135,7 +135,7 @@ async def login_submit(
         return _error_response(error)
 
     # Check app access permission
-    allowed, reason = await service.check_app_access(sqlite_session, staff, app_id)
+    allowed, reason = service.check_app_access(staff, app_info)
     if not allowed:
         return _error_response(reason)
 

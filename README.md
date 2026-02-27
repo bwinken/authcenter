@@ -111,8 +111,8 @@ sequenceDiagram
     S-->>C: 帳號存在
     C->>S: ③ 比對 bcrypt 密碼雜湊
     S-->>C: 密碼正確
-    C->>S: ④ 查詢 app_access_rules
-    S-->>C: 部門與等級皆符合
+    C->>C: ④ 查詢 apps.yaml 存取規則
+    Note over C: 部門與等級皆符合
     C->>C: ⑤ 產生 Authorization Code（5 分鐘有效）
 
     C-->>U: 8. 302 重導 {redirect_uri}?code=abc123
@@ -231,7 +231,7 @@ sequenceDiagram
 | ① | 查詢員工是否在職 | MySQL `staff` 表 | 回傳「使用者名稱不存在，請確認後重試。」 |
 | ② | 查詢帳號是否已註冊 | SQLite `user_accounts` 表 | 303 重導至 `/auth/register-request`（身份驗證頁） |
 | ③ | bcrypt 比對密碼 | SQLite `user_accounts` 表 | 回傳「密碼錯誤，請重新輸入。」 |
-| ④ | 檢查 App 存取規則 | SQLite `app_access_rules` 表 | 回傳「部門無權」或「等級不足」 |
+| ④ | 檢查 App 存取規則 | `apps.yaml` 設定檔 | 回傳「部門無權」或「等級不足」 |
 | ⑤ | 產生 Authorization Code | SQLite `auth_codes` 表（5 分鐘 TTL） | — |
 
 所有驗證失敗都**不會產生 code**，使用者停留在 Auth Center 頁面直到通過驗證或放棄。
@@ -399,24 +399,21 @@ apps:
 
 ### Step 3：設定 App 存取規則（可選）
 
-如果要限制哪些部門或等級的員工可以使用此 App，在 SQLite 的 `app_access_rules` 表中新增規則：
+在 Step 2 的 `apps.yaml` 中直接加上 `allowed_depts` 和 `min_level` 即可：
 
-```sql
--- 例：只允許 IT 和 RD 部門、Level >= 2 的員工
-INSERT INTO app_access_rules (app_id, allowed_depts, min_level)
-VALUES ('my_new_app', '["IT", "RD"]', 2);
-
--- 例：所有部門、Level >= 1（不限制）
-INSERT INTO app_access_rules (app_id, allowed_depts, min_level)
-VALUES ('my_new_app', '[]', 1);
+```yaml
+  - app_id: "my_new_app"
+    # ... client_secret, redirect_uri, name ...
+    allowed_depts: ["IT", "RD"]   # 只允許 IT 和 RD 部門，[] = 不限
+    min_level: 2                   # 最低 Level 2
 ```
 
-| 欄位 | 說明 |
-|------|------|
-| `allowed_depts` | JSON 陣列，空陣列 `[]` = 不限部門 |
-| `min_level` | 最低員工等級要求（1/2/3） |
+| 欄位 | 說明 | 預設值 |
+|------|------|--------|
+| `allowed_depts` | 允許的部門代碼清單，空陣列 `[]` = 不限部門 | `[]` |
+| `min_level` | 最低員工等級要求（1/2/3） | `1` |
 
-**如果沒有設定存取規則**，該 App 預設允許所有員工登入。
+**如果不設定這兩個欄位**，該 App 預設允許所有員工登入。
 
 ### Step 4：取得 Auth Center 公鑰
 
@@ -705,7 +702,7 @@ flowchart TD
 ### Checklist：App 整合完成確認
 
 - [ ] `apps.yaml` 已新增 App 設定（app_id, client_secret hash, redirect_uri, name）
-- [ ] `app_access_rules` 已設定存取規則（或確認不需限制）
+- [ ] `apps.yaml` 中已設定 `allowed_depts` 和 `min_level`（或確認不需限制）
 - [ ] App 專案中有 `public.pem`
 - [ ] App `.env` 中設定了 `AUTH_CENTER_URL`、`APP_ID`、`CLIENT_SECRET`、`REDIRECT_URI`
 - [ ] 實作了未登入時的 302 重導邏輯
@@ -737,15 +734,6 @@ flowchart TD
 | `password_hash` | VARCHAR(255) | bcrypt 雜湊 |
 | `created_at` | DATETIME | 建立時間 |
 | `updated_at` | DATETIME | 更新時間 |
-
-`app_access_rules` — App 存取門檻
-
-| 欄位 | 型別 | 說明 |
-|------|------|------|
-| `id` | INTEGER PK | 自增 ID |
-| `app_id` | VARCHAR(100) UNIQUE | App 識別碼 |
-| `allowed_depts` | TEXT | JSON 陣列，允許部門（空 = 全部） |
-| `min_level` | INTEGER | 最低等級要求 |
 
 `auth_codes` — 一次性 Authorization Code
 

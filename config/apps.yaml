@@ -3,19 +3,29 @@
 #
 # client_secret should be a bcrypt hash in production.
 # Use passlib: from passlib.hash import bcrypt; bcrypt.hash("your_secret")
+#
+# Access control (optional):
+#   allowed_depts: list of dept_code strings, [] or omit = all departments allowed
+#   min_level: minimum staff level required (1/2/3), default 1
 
 apps:
   - app_id: "ai_chat_app"
     client_secret: "$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAeYK0W3txFZbJBo7RGdEiqwB3sYfNLMbW"  # plaintext: chat_secret_123
     redirect_uri: "http://localhost:8001/auth/callback"
     name: "AI Chat Assistant"
+    allowed_depts: []       # all departments
+    min_level: 1
 
   - app_id: "ai_report_app"
     client_secret: "$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAeYK0W3txFZbJBo7RGdEiqwB3sYfNLMbW"  # plaintext: report_secret_456
     redirect_uri: "http://localhost:8002/auth/callback"
     name: "AI Report Generator"
+    allowed_depts: ["IT", "FIN"]
+    min_level: 2
 
   - app_id: "test_app"
     client_secret: "$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAeYK0W3txFZbJBo7RGdEiqwB3sYfNLMbW"  # plaintext: test_secret
     redirect_uri: "http://localhost:8001/callback"
     name: "Test Application"
+    allowed_depts: []
+    min_level: 1

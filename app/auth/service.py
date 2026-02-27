@@ -1,6 +1,5 @@
 """Core authentication business logic."""
 
-import json
 import secrets
 import time
 from collections import defaultdict
@@ -215,26 +214,14 @@ def map_scopes(level: int) -> list[str]:
     return SCOPE_MAP.get(level, ["read"])
 
 
-async def check_app_access(
-    sqlite_session: AsyncSession,
-    staff: StaffInfo,
-    app_id: str,
-) -> tuple[bool, str]:
+def check_app_access(staff: StaffInfo, app_info: dict) -> tuple[bool, str]:
     """Check if staff has permission to access the given app.
 
+    Reads allowed_depts and min_level from apps.yaml config.
     Returns (allowed, reason).
     """
-    result = await sqlite_session.execute(
-        text("SELECT allowed_depts, min_level FROM app_access_rules WHERE app_id = :aid"),
-        {"aid": app_id},
-    )
-    row = result.fetchone()
-    if row is None:
-        # No rule defined = allow by default
-        return True, ""
-
-    allowed_depts = json.loads(row[0]) if row[0] else []
-    min_level = row[1]
+    allowed_depts = app_info.get("allowed_depts", []) or []
+    min_level = app_info.get("min_level", 1)
 
     if allowed_depts and staff.dept_code not in allowed_depts:
         return False, f"您的部門 ({staff.dept_code}) 無權存取此應用程式。"

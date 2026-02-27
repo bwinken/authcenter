@@ -25,14 +25,6 @@ async def lifespan(app: FastAPI):
             )
         """))
         await conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS app_access_rules (
-                id            INTEGER      PRIMARY KEY AUTOINCREMENT,
-                app_id        VARCHAR(100) NOT NULL UNIQUE,
-                allowed_depts TEXT         DEFAULT '[]',
-                min_level     INTEGER      DEFAULT 1
-            )
-        """))
-        await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS auth_codes (
                 code       VARCHAR(64)  PRIMARY KEY,
                 employee_name VARCHAR(50) NOT NULL,
