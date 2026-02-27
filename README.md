@@ -318,111 +318,281 @@ graph LR
 | 2 | `["read", "write"]` |
 | 3 | `["read", "write", "admin"]` |
 
-## 註冊新的 AI App
+## 註冊新的 AI App（完整 Onboarding）
 
-編輯 `config/apps.yaml`：
+要讓一個新的 AI App 接入 Auth Center SSO，需要完成以下步驟：
 
-```yaml
-apps:
-  - app_id: "my_new_app"
-    client_secret: "$2b$12$..."   # bcrypt hash of your secret
-    redirect_uri: "https://my-app.example.com/auth/callback"
-    name: "My New App"
+### Onboarding 流程總覽
+
+```mermaid
+flowchart LR
+    A[1. 產生<br/>client_secret] --> B[2. 註冊到<br/>apps.yaml]
+    B --> C[3. 設定 App<br/>存取規則]
+    C --> D[4. 取得<br/>public.pem]
+    D --> E[5. App 端<br/>實作整合]
 ```
 
-產生 bcrypt hash：
+### Step 1：產生 Client Secret
+
+每個 App 需要一組 `client_secret`，用於在 Code → Token 交換時驗證 App 身份。`apps.yaml` 中儲存的是 bcrypt 雜湊值，明文由 App 端自行保管。
 
 ```python
 from passlib.hash import bcrypt
-print(bcrypt.hash("your_plain_secret"))
+
+# 自訂一個高強度明文 secret
+plain_secret = "my_app_secret_2024"
+
+# 產生 bcrypt hash，貼到 apps.yaml 中
+print(bcrypt.hash(plain_secret))
+# 輸出類似：$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAe...
 ```
+
+> **安全提醒**：明文 secret 應存放在 App 的 `.env` 或 secrets manager 中，切勿寫死在程式碼裡或提交到 Git。
+
+### Step 2：在 `config/apps.yaml` 中註冊
+
+將新 App 資訊加入設定檔：
+
+```yaml
+apps:
+  # ... 現有 App ...
+
+  - app_id: "my_new_app"                # 唯一識別碼，用於 JWT 的 aud 欄位
+    client_secret: "$2b$12$..."          # Step 1 產生的 bcrypt hash
+    redirect_uri: "https://my-app.example.com/auth/callback"  # App 的 callback URL
+    name: "My New App"                   # 顯示名稱，登入頁會顯示「登入以存取 My New App」
+```
+
+| 欄位 | 說明 | 注意事項 |
+|------|------|----------|
+| `app_id` | App 唯一識別碼 | 全小寫 + 底線，如 `ai_chat_app` |
+| `client_secret` | bcrypt 雜湊後的密鑰 | 不可存放明文 |
+| `redirect_uri` | 登入成功後的回調 URL | 必須完全匹配，包含 protocol 和 port |
+| `name` | App 顯示名稱 | 登入頁面「登入以存取 **{name}**」處顯示 |
+
+> **`redirect_uri` 安全規則**：Auth Center 會嚴格比對 `redirect_uri`，防止 Open Redirect 攻擊。URL 必須與 `apps.yaml` 中的設定完全一致（含結尾斜線）。
+
+### Step 3：設定 App 存取規則（可選）
+
+如果要限制哪些部門或等級的員工可以使用此 App，在 SQLite 的 `app_access_rules` 表中新增規則：
+
+```sql
+-- 例：只允許 IT 和 RD 部門、Level >= 2 的員工
+INSERT INTO app_access_rules (app_id, allowed_depts, min_level)
+VALUES ('my_new_app', '["IT", "RD"]', 2);
+
+-- 例：所有部門、Level >= 1（不限制）
+INSERT INTO app_access_rules (app_id, allowed_depts, min_level)
+VALUES ('my_new_app', '[]', 1);
+```
+
+| 欄位 | 說明 |
+|------|------|
+| `allowed_depts` | JSON 陣列，空陣列 `[]` = 不限部門 |
+| `min_level` | 最低員工等級要求（1/2/3） |
+
+**如果沒有設定存取規則**，該 App 預設允許所有員工登入。
+
+### Step 4：取得 Auth Center 公鑰
+
+將 Auth Center 的 `keys/public.pem` 複製到你的 App 專案中。此公鑰用於在 App 端本地驗證 JWT 簽名，**無法用來簽發 Token**。
+
+```bash
+# 從 Auth Center 複製公鑰到你的 App 專案
+cp /path/to/auth-center/keys/public.pem /path/to/my-app/keys/public.pem
+```
+
+### Step 5：App 端實作整合
+
+完成以上設定後，App 端需要實作 3 個功能：導流（重導至 Auth Center）、接收 Code 並換取 Token、驗證 JWT 保護路由。詳見下方「AI App 端整合指南」。
+
+---
 
 ## AI App 端整合指南
 
 完整範例請參考 `middleware_example/app_middleware.py`。
 
+### 整合架構
+
+```mermaid
+sequenceDiagram
+    participant U as 使用者瀏覽器
+    participant A as AI App (你的 App)
+    participant C as Auth Center
+
+    Note over A: 需要實作 3 個部分
+
+    rect rgb(240, 245, 255)
+    Note over U,A: ① 導流：未登入 → 重導至 Auth Center
+    U->>A: GET /dashboard（無 Cookie）
+    A-->>U: 302 → Auth Center /auth/login?app_id=X&redirect_uri=Y
+    end
+
+    U->>C: 使用者在 Auth Center 完成登入
+
+    rect rgb(240, 255, 240)
+    Note over U,A: ② Callback：接收 Code → 換取 Token
+    C-->>U: 302 → {redirect_uri}?code=abc123
+    U->>A: GET /auth/callback?code=abc123
+    A->>C: POST /auth/token（server-to-server）
+    C-->>A: JWT Token
+    A-->>U: Set-Cookie: access_token（HttpOnly）
+    end
+
+    rect rgb(255, 245, 240)
+    Note over U,A: ③ 驗證：每次請求用 public.pem 驗 JWT
+    U->>A: GET /dashboard（Cookie 自動帶上）
+    A->>A: jwt.decode（本地驗證，不呼叫 Auth Center）
+    A-->>U: 回傳頁面內容
+    end
+```
+
 ### 前置準備
 
-1. 從 Auth Center 取得 `public.pem`（RS256 公鑰，只能驗證不能簽發）
-2. 在 Auth Center 的 `config/apps.yaml` 中註冊你的 App
-3. 安裝依賴：`pip install PyJWT[crypto]`
+| 項目 | 說明 |
+|------|------|
+| **Auth Center 公鑰** | 從 Auth Center 取得 `public.pem`，放到 App 專案中 |
+| **apps.yaml 已註冊** | 確認 `app_id`、`client_secret`（bcrypt hash）、`redirect_uri` 已設定 |
+| **安裝依賴** | `pip install PyJWT[crypto] httpx` |
+| **App 端環境變數** | 設定 `AUTH_CENTER_URL`、`APP_ID`、`CLIENT_SECRET`、`REDIRECT_URI` |
 
-### Step 1：未登入時重導至 Auth Center
+App 端建議的 `.env`：
 
-當使用者訪問 App 的受保護頁面，但 Cookie 中沒有有效 JWT 時：
+```env
+AUTH_CENTER_URL=http://localhost:8000
+APP_ID=my_new_app
+CLIENT_SECRET=my_app_secret_2024
+REDIRECT_URI=http://localhost:8001/auth/callback
+PUBLIC_KEY_PATH=./keys/public.pem
+```
+
+### Part 1：導流 — 未登入時重導至 Auth Center
+
+當使用者訪問 App 的受保護頁面，但 Cookie 中沒有有效 JWT 時，**302 重導到 Auth Center 的登入頁面**：
 
 ```python
 from fastapi.responses import RedirectResponse
+import os
 
-AUTH_CENTER = "http://localhost:8000"
-APP_ID = "ai_chat_app"
-REDIRECT_URI = "http://localhost:8001/auth/callback"
+AUTH_CENTER = os.getenv("AUTH_CENTER_URL", "http://localhost:8000")
+APP_ID = os.getenv("APP_ID", "ai_chat_app")
+REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8001/auth/callback")
 
 @app.get("/protected")
 async def protected_page(access_token: str | None = Cookie(default=None)):
     if access_token is None:
-        # 重導至 Auth Center 登入
+        # 重導至 Auth Center 登入頁
+        # app_id: Auth Center 用來識別哪個 App 發起請求
+        # redirect_uri: 登入成功後要回到哪裡
         return RedirectResponse(
             f"{AUTH_CENTER}/auth/login?app_id={APP_ID}&redirect_uri={REDIRECT_URI}"
         )
     # ... 驗證 token 後正常處理
 ```
 
-### Step 2：實作 Callback 端點接收 Code
+**重導 URL 格式：**
 
-Auth Center 登入成功後，會將使用者重導回你註冊的 `redirect_uri`，URL 中帶有 `code` 參數：
+```
+https://auth-center.example.com/auth/login?app_id=my_new_app&redirect_uri=https://my-app.example.com/auth/callback
+```
+
+| 參數 | 說明 |
+|------|------|
+| `app_id` | 你在 `apps.yaml` 中註冊的 App ID |
+| `redirect_uri` | 登入成功後 Auth Center 會把使用者導回此 URL，必須與 `apps.yaml` 完全一致 |
+
+Auth Center 收到請求後會：
+1. 驗證 `app_id` 是否已註冊
+2. 驗證 `redirect_uri` 是否與設定一致
+3. 在登入頁面顯示「登入以存取 **{App Name}**」
+
+### Part 2：Callback — 接收 Code 並換取 Token
+
+Auth Center 登入成功後，會將使用者重導回你註冊的 `redirect_uri`，URL 中帶有一次性的 `code` 參數：
 
 ```
 GET http://localhost:8001/auth/callback?code=dBjftJeZ4CVP-mB92K27uhbUJU1p...
 ```
 
-App 後端需要用這個 code 向 Auth Center 換取 JWT：
+App 後端需要用這個 code + client_secret 向 Auth Center 後端換取 JWT（**伺服器對伺服器呼叫**，secret 不會暴露在瀏覽器端）：
 
 ```python
 import httpx
-from fastapi import Query
+from fastapi import Query, HTTPException
 from fastapi.responses import RedirectResponse
 
-CLIENT_SECRET = "chat_secret_123"  # 你的 App 明文 secret
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")  # 明文 secret，從 .env 讀取
 
 @app.get("/auth/callback")
 async def auth_callback(code: str = Query(...)):
     """用 authorization code 向 Auth Center 換取 JWT Token。"""
 
-    # 伺服器對伺服器呼叫，code 和 secret 不會暴露在瀏覽器端
+    # ── Step A：用 code 換 Token（伺服器對伺服器） ──
     async with httpx.AsyncClient() as client:
         resp = await client.post(f"{AUTH_CENTER}/auth/token", json={
-            "code": code,
-            "app_id": APP_ID,
-            "client_secret": CLIENT_SECRET,
+            "code": code,             # Auth Center 回傳的一次性授權碼
+            "app_id": APP_ID,         # 你的 App ID
+            "client_secret": CLIENT_SECRET,  # 你的明文 secret
         })
 
     data = resp.json()
 
-    # 處理錯誤
+    # ── Step B：處理錯誤回應 ──
     if resp.status_code != 200:
-        if data.get("error") == "invalid_grant":
-            # Code 過期或已使用，引導重新登入
+        error = data.get("error")
+
+        if error == "invalid_grant":
+            # Code 已過期（> 5 分鐘）或已被使用（一次性）→ 重新登入
             return RedirectResponse(
                 f"{AUTH_CENTER}/auth/login?app_id={APP_ID}&redirect_uri={REDIRECT_URI}"
             )
-        if data.get("error") == "invalid_client":
-            raise HTTPException(500, "App 設定錯誤，請聯繫管理員")
 
-    # 將 JWT 存入 HttpOnly Cookie（瀏覽器端 JS 無法讀取，防止 XSS）
+        if error == "invalid_client":
+            # app_id 不存在或 client_secret 不匹配 → App 設定有誤
+            raise HTTPException(500, "Auth Center 驗證失敗：App 設定錯誤，請聯繫管理員")
+
+        if error == "staff_not_found":
+            # 員工資料異常（極少見）
+            raise HTTPException(500, "員工資料異常，請聯繫管理員")
+
+    # ── Step C：將 JWT 存入 HttpOnly Cookie ──
     response = RedirectResponse("/", status_code=303)
     response.set_cookie(
         key="access_token",
         value=data["access_token"],
-        httponly=True,     # JS 無法存取
+        httponly=True,     # JS 無法存取，防止 XSS 竊取
         secure=True,       # 僅透過 HTTPS 傳輸（本地開發設 False）
-        samesite="lax",    # 防止 CSRF
+        samesite="lax",    # 防止 CSRF 跨站請求
         max_age=43200,     # 12 小時，與 JWT exp 一致
     )
     return response
 ```
 
-### Step 3：驗證 JWT 並保護路由
+**Token 交換 API 詳細說明：**
+
+```
+POST /auth/token
+Content-Type: application/json
+
+{
+  "code": "dBjftJeZ4CVP-mB92K27uhbUJU1p...",  ← Auth Center 回傳的授權碼
+  "app_id": "my_new_app",                      ← 你的 App ID
+  "client_secret": "my_app_secret_2024"         ← 你的明文 secret
+}
+```
+
+Auth Center 收到後會：
+1. 查找 `app_id` 是否已註冊 → 否則回 `401 invalid_client`
+2. 用 bcrypt 比對 `client_secret` 與 `apps.yaml` 中的 hash → 不匹配則回 `401 invalid_client`
+3. 從記憶體中取出 `code` 對應的 `staff_id` + `app_id` → 不存在或過期回 `400 invalid_grant`
+4. 驗證 code 中的 `app_id` 與請求的 `app_id` 一致 → 不一致回 `400 invalid_grant`
+5. 消耗 code（一次性使用，立即刪除）
+6. 查詢 MySQL 取得員工資料 → 查無資料回 `400 staff_not_found`
+7. 依據員工 Level 映射 scopes
+8. 用 `private.pem` 簽發 RS256 JWT（有效 12 小時）
+9. 回傳 `{ "access_token": "eyJ...", "token_type": "bearer", "expires_in": 43200 }`
+
+### Part 3：驗證 JWT 並保護路由
 
 後續每個請求，瀏覽器會自動帶上 Cookie。App 使用 `public.pem` 在本地驗證 JWT，**不需要再呼叫 Auth Center**：
 
@@ -430,7 +600,7 @@ async def auth_callback(code: str = Query(...)):
 import jwt
 from pathlib import Path
 
-PUBLIC_KEY = Path("./keys/public.pem").read_text()
+PUBLIC_KEY = Path(os.getenv("PUBLIC_KEY_PATH", "./keys/public.pem")).read_text()
 
 def get_current_user(access_token: str | None = Cookie(default=None)) -> dict:
     """從 Cookie 取出 JWT 並驗證。"""
@@ -452,6 +622,7 @@ def get_current_user(access_token: str | None = Cookie(default=None)) -> dict:
         raise HTTPException(401, f"Invalid token: {e}")
 
     return payload
+    # payload 內容：{"sub": "EMP001", "name": "王小明", "dept": "IT", "scopes": ["read", "write"], "aud": "my_new_app", ...}
 
 
 # 使用 FastAPI Depends 保護路由
@@ -461,11 +632,18 @@ async def dashboard(user: dict = Depends(get_current_user)):
 
 
 # 需要特定 scope 的路由
+def require_scopes(required: list[str]):
+    """Dependency factory：驗證使用者是否擁有所需的 scopes。"""
+    def checker(user: dict = Depends(get_current_user)):
+        missing = set(required) - set(user.get("scopes", []))
+        if missing:
+            raise HTTPException(403, f"權限不足，缺少：{missing}")
+        return user
+    return checker
+
 @app.get("/admin")
-async def admin_panel(user: dict = Depends(get_current_user)):
-    if "admin" not in user["scopes"]:
-        raise HTTPException(403, "需要 admin 權限")
-    return {"admin": True}
+async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
+    return {"admin": True, "user": user["name"]}
 ```
 
 ### 完整流程總結
@@ -495,6 +673,19 @@ flowchart TD
     M -- invalid_grant --> E
     M -- invalid_client --> O[App 設定錯誤]
 ```
+
+### Checklist：App 整合完成確認
+
+- [ ] `apps.yaml` 已新增 App 設定（app_id, client_secret hash, redirect_uri, name）
+- [ ] `app_access_rules` 已設定存取規則（或確認不需限制）
+- [ ] App 專案中有 `public.pem`
+- [ ] App `.env` 中設定了 `AUTH_CENTER_URL`、`APP_ID`、`CLIENT_SECRET`、`REDIRECT_URI`
+- [ ] 實作了未登入時的 302 重導邏輯
+- [ ] 實作了 `/auth/callback` 端點（code → token 交換）
+- [ ] Token 存入 HttpOnly + Secure + SameSite Cookie
+- [ ] 實作了 `get_current_user` JWT 驗證（含 audience 檢查）
+- [ ] 測試：完整登入流程（導流 → 登入 → callback → 受保護頁面）
+- [ ] 測試：Token 過期後自動重導重新登入
 
 ## 資料庫架構
 

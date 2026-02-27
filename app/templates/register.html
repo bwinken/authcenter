@@ -1,9 +1,7 @@
 {% extends "base.html" %}
-{% block title %}註冊 - Auth Center{% endblock %}
+{% block title %}設定密碼 - AuthCenter{% endblock %}
 {% block content %}
-<div class="logo">&#128221;</div>
-<h1>設定密碼</h1>
-<p class="subtitle">員工編號: {{ staff_id }}，首次登入請設定密碼。</p>
+<p class="subtitle" style="margin-bottom: 24px;">員工編號 <strong>{{ staff_id }}</strong>，首次登入請設定密碼。</p>
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
@@ -30,10 +28,10 @@
     <button type="submit" class="btn btn-primary">建立帳號</button>
 </form>
 {% endif %}
+{% endblock %}
 
-<div class="links">
-    {% if app_id and redirect_uri %}
-    <a href="/auth/login?app_id={{ app_id }}&redirect_uri={{ redirect_uri }}">返回登入</a>
-    {% endif %}
-</div>
+{% block links %}
+{% if app_id and redirect_uri %}
+<a href="/auth/login?app_id={{ app_id }}&redirect_uri={{ redirect_uri }}">返回登入</a>
+{% endif %}
 {% endblock %}
