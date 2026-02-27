@@ -37,3 +37,4 @@ class StaffInfo(BaseModel):
     name: str
     dept_code: str
     level: int
+    ext: str = ""

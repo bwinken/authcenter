@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}設定密碼 - AuthCenter{% endblock %}
 {% block content %}
+{% if staff_id %}
 <p class="subtitle" style="margin-bottom: 24px;">員工編號 <strong>{{ staff_id }}</strong>，首次登入請設定密碼。</p>
+{% endif %}
 
 {% if error %}
 <div class="alert alert-error">{{ error }}</div>
@@ -9,11 +11,10 @@
 
 {% if success %}
 <div class="alert alert-success">帳號建立成功！請返回登入頁面。</div>
-{% else %}
+{% elif token %}
 <form method="POST" action="/auth/register">
     <input type="hidden" name="staff_id" value="{{ staff_id }}">
-    <input type="hidden" name="app_id" value="{{ app_id }}">
-    <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+    <input type="hidden" name="token" value="{{ token }}">
 
     <div class="form-group">
         <label for="password">設定密碼</label>
@@ -31,7 +32,5 @@
 {% endblock %}
 
 {% block links %}
-{% if app_id and redirect_uri %}
-<a href="/auth/login?app_id={{ app_id }}&redirect_uri={{ redirect_uri }}">返回登入</a>
-{% endif %}
+<a href="javascript:history.back()">返回登入</a>
 {% endblock %}

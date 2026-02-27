@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}帳號申請 - AuthCenter{% endblock %}
+{% block content %}
+{% if staff_id %}
+<p class="subtitle" style="margin-bottom: 24px;">員工編號 <strong>{{ staff_id }}</strong>，請填寫以下資訊以驗證身份。</p>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+{% if success %}
+<div class="alert alert-success">身份驗證通過，已通知管理員。<br>請等待管理員將註冊連結發送至您的信箱。</div>
+{% elif token %}
+<form method="POST" action="/auth/register-request">
+    <input type="hidden" name="staff_id" value="{{ staff_id }}">
+    <input type="hidden" name="token" value="{{ token }}">
+
+    <div class="form-group">
+        <label for="ext">分機號碼</label>
+        <input type="text" id="ext" name="ext" placeholder="請輸入您的分機號碼" required autofocus>
+    </div>
+
+    <div class="form-group">
+        <label for="dept_code">部門代碼</label>
+        <input type="text" id="dept_code" name="dept_code" placeholder="請輸入您的部門代碼" required>
+    </div>
+
+    <button type="submit" class="btn btn-primary">送出驗證</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block links %}
+<a href="javascript:history.back()">返回登入</a>
+{% endblock %}

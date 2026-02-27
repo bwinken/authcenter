@@ -32,6 +32,23 @@ async def lifespan(app: FastAPI):
                 min_level     INTEGER      DEFAULT 1
             )
         """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS auth_codes (
+                code       VARCHAR(64)  PRIMARY KEY,
+                staff_id   VARCHAR(50)  NOT NULL,
+                app_id     VARCHAR(100) NOT NULL,
+                expires_at REAL         NOT NULL
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS registration_tokens (
+                token      VARCHAR(64)  PRIMARY KEY,
+                staff_id   VARCHAR(50)  NOT NULL,
+                app_id     VARCHAR(100) DEFAULT '',
+                redirect_uri TEXT       DEFAULT '',
+                expires_at REAL         NOT NULL
+            )
+        """))
     yield
     # Shutdown: dispose engines
     await sqlite_engine.dispose()

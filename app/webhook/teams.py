@@ -6,16 +6,12 @@ from app.config import get_settings
 from app.schemas import StaffInfo
 
 
-async def send_forgot_password_notification(staff: StaffInfo) -> bool:
-    """Send a forgot-password notification to Microsoft Teams via Webhook.
-
-    Returns True if the webhook was sent successfully.
-    """
+async def _send_adaptive_card(title: str, subtitle: str, facts: list[dict]) -> bool:
+    """Send an Adaptive Card to Microsoft Teams via Webhook."""
     settings = get_settings()
     if not settings.TEAMS_WEBHOOK_URL:
         return False
 
-    # Microsoft Teams Adaptive Card payload
     payload = {
         "type": "message",
         "attachments": [
@@ -30,21 +26,16 @@ async def send_forgot_password_notification(staff: StaffInfo) -> bool:
                             "type": "TextBlock",
                             "size": "Large",
                             "weight": "Bolder",
-                            "text": "🔑 密碼重設請求",
+                            "text": title,
                         },
                         {
                             "type": "TextBlock",
-                            "text": "有員工請求重設密碼，請管理員協助處理。",
+                            "text": subtitle,
                             "wrap": True,
                         },
                         {
                             "type": "FactSet",
-                            "facts": [
-                                {"title": "員工編號", "value": staff.staff_id},
-                                {"title": "姓名", "value": staff.name},
-                                {"title": "部門", "value": staff.dept_code},
-                                {"title": "權限等級", "value": f"Level {staff.level}"},
-                            ],
+                            "facts": facts,
                         },
                     ],
                 },
@@ -55,3 +46,40 @@ async def send_forgot_password_notification(staff: StaffInfo) -> bool:
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.post(settings.TEAMS_WEBHOOK_URL, json=payload)
         return resp.is_success
+
+
+async def send_forgot_password_notification(staff: StaffInfo) -> bool:
+    """Send a forgot-password notification to Microsoft Teams via Webhook."""
+    return await _send_adaptive_card(
+        title="🔑 密碼重設請求",
+        subtitle="有員工請求重設密碼，請管理員協助處理。",
+        facts=[
+            {"title": "員工編號", "value": staff.staff_id},
+            {"title": "姓名", "value": staff.name},
+            {"title": "部門", "value": staff.dept_code},
+            {"title": "權限等級", "value": f"Level {staff.level}"},
+        ],
+    )
+
+
+async def send_registration_request_notification(staff: StaffInfo, app_name: str) -> bool:
+    """Send a new-user registration request notification to Microsoft Teams.
+
+    Admin should generate a registration link and send it to the employee.
+    Command: python scripts/generate_register_link.py <staff_id>
+    """
+    return await _send_adaptive_card(
+        title="📋 新員工註冊請求",
+        subtitle=(
+            "有員工首次登入，尚未建立帳號。請核對身份後，"
+            "執行指令產生註冊連結並發送至員工信箱。"
+        ),
+        facts=[
+            {"title": "員工編號", "value": staff.staff_id},
+            {"title": "姓名", "value": staff.name},
+            {"title": "部門", "value": staff.dept_code},
+            {"title": "權限等級", "value": f"Level {staff.level}"},
+            {"title": "欲存取的 App", "value": app_name},
+            {"title": "產生連結指令", "value": f"python scripts/generate_register_link.py {staff.staff_id}"},
+        ],
+    )

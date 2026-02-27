@@ -2,7 +2,7 @@
 
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Cookie, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from passlib.hash import bcrypt
@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import load_registered_apps, get_settings
 from app.database import get_mysql_session, get_sqlite_session
 from app.auth import service
-from app.auth.jwt_handler import create_token
+from app.auth.jwt_handler import create_token, verify_token
 from app.schemas import TokenRequest, ForgotPasswordRequest
-from app.webhook.teams import send_forgot_password_notification
+from app.webhook.teams import send_forgot_password_notification, send_registration_request_notification
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 templates = Templates = None  # initialized in main.py via init_templates()
@@ -22,6 +22,14 @@ templates = Templates = None  # initialized in main.py via init_templates()
 def init_templates(t: Jinja2Templates) -> None:
     global templates
     templates = t
+
+
+def _get_client_ip(request: Request) -> str:
+    """Extract client IP from request, respecting X-Forwarded-For behind reverse proxy."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 # ─── Login Page ───────────────────────────────────────────────
@@ -80,31 +88,19 @@ async def login_submit(
     """處理登入表單提交。
 
     驗證流程：
-    1. 查 MySQL 確認員工在職
-    2. 查 SQLite 確認帳號是否已註冊（未註冊則導向註冊頁）
-    3. 驗證密碼是否正確
-    4. 檢查該員工是否有權存取目標 App
-    5. 產生 authorization code，302 重導回 App 的 redirect_uri
+    0. 檢查頻率限制（同一 IP 5 分鐘內最多 10 次）
+    1. 重新驗證 app_id + redirect_uri（防止表單竄改）
+    2. 查 MySQL 確認員工在職
+    3. 查 SQLite 確認帳號是否已註冊（未註冊則導向註冊頁）
+    4. 驗證密碼是否正確
+    5. 檢查該員工是否有權存取目標 App
+    6. 產生 authorization code，302 重導回 App 的 redirect_uri
     """
     apps = load_registered_apps()
     app_info = apps.get(app_id)
     app_name = app_info.get("name", app_id) if app_info else "Unknown"
 
-    # Authenticate
-    staff, error = await service.authenticate(
-        mysql_session, sqlite_session, staff_id, password
-    )
-
-    if error == "needs_registration":
-        # Redirect to registration page
-        params = urlencode({
-            "staff_id": staff_id,
-            "app_id": app_id,
-            "redirect_uri": redirect_uri,
-        })
-        return RedirectResponse(f"/auth/register?{params}", status_code=303)
-
-    if error:
+    def _error_response(error: str):
         return templates.TemplateResponse("login.html", {
             "request": request,
             "error": error,
@@ -113,42 +109,168 @@ async def login_submit(
             "app_name": app_name,
         })
 
+    # Rate limit check
+    client_ip = _get_client_ip(request)
+    service.record_attempt(client_ip)
+    if not service.check_rate_limit(client_ip):
+        return _error_response("登入嘗試過於頻繁，請 5 分鐘後再試。")
+
+    # Re-validate app_id and redirect_uri (hidden fields can be tampered)
+    if app_info is None or app_info["redirect_uri"] != redirect_uri:
+        return _error_response("應用程式驗證失敗，請從 App 重新發起登入。")
+
+    # Authenticate
+    staff, error = await service.authenticate(
+        mysql_session, sqlite_session, staff_id, password
+    )
+
+    if error == "needs_registration":
+        # Redirect to registration request page — user verifies identity, then webhook to admin
+        reg_token = await service.generate_registration_token(sqlite_session, staff_id, app_id, redirect_uri)
+        return RedirectResponse(f"/auth/register-request?token={reg_token}", status_code=303)
+
+    if error:
+        return _error_response(error)
+
     # Check app access permission
     allowed, reason = await service.check_app_access(sqlite_session, staff, app_id)
     if not allowed:
-        return templates.TemplateResponse("login.html", {
-            "request": request,
-            "error": reason,
-            "app_id": app_id,
-            "redirect_uri": redirect_uri,
-            "app_name": app_name,
-        })
+        return _error_response(reason)
 
-    # Generate authorization code and redirect back to app
-    code = service.generate_auth_code(staff.staff_id, app_id)
+    # Generate authorization code (SQLite-backed) and redirect back to app
+    code = await service.generate_auth_code(sqlite_session, staff.staff_id, app_id)
     return RedirectResponse(f"{redirect_uri}?code={code}", status_code=303)
 
 
-# ─── Register Page ────────────────────────────────────────────
+# ─── Registration Request (identity verification → webhook) ──
+
+@router.get("/register-request", response_class=HTMLResponse)
+async def register_request_page(
+    request: Request,
+    token: str = Query(...),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """渲染身份驗證頁面。
+
+    員工首次登入時導向此頁面，需填寫分機號碼與部門代碼以核對身份。
+    核對正確後系統發送 Teams Webhook 通知管理員，管理員再產生註冊連結。
+    """
+    data = await service.consume_registration_token(sqlite_session, token)
+    if data is None:
+        return templates.TemplateResponse("register_request.html", {
+            "request": request,
+            "staff_id": "",
+            "token": "",
+            "error": "連結已過期或無效，請從登入頁面重新操作。",
+            "success": False,
+        })
+
+    return templates.TemplateResponse("register_request.html", {
+        "request": request,
+        "staff_id": data["staff_id"],
+        "token": token,
+        "error": None,
+        "success": False,
+    })
+
+
+@router.post("/register-request")
+async def register_request_submit(
+    request: Request,
+    staff_id: str = Form(...),
+    ext: str = Form(...),
+    dept_code: str = Form(...),
+    token: str = Form(...),
+    mysql_session: AsyncSession = Depends(get_mysql_session),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """處理身份驗證表單。
+
+    驗證流程：
+    1. 驗證 registration token 有效
+    2. 查 MySQL 取得員工資料
+    3. 核對分機號碼與部門代碼是否匹配
+    4. 核對正確 → 發送 Teams Webhook 通知管理員
+    """
+    data = await service.consume_registration_token(sqlite_session, token)
+    if data is None:
+        return templates.TemplateResponse("register_request.html", {
+            "request": request,
+            "staff_id": staff_id,
+            "token": "",
+            "error": "連結已過期或無效，請從登入頁面重新操作。",
+            "success": False,
+        })
+
+    ctx = {
+        "request": request,
+        "staff_id": staff_id,
+        "token": token,
+        "error": None,
+        "success": False,
+    }
+
+    # Verify staff info from MySQL
+    staff = await service.verify_staff(mysql_session, staff_id)
+    if staff is None:
+        ctx["error"] = "員工編號不存在。"
+        return templates.TemplateResponse("register_request.html", ctx)
+
+    # Verify ext and dept_code match
+    if staff.ext != ext.strip():
+        ctx["error"] = "分機號碼不正確。"
+        return templates.TemplateResponse("register_request.html", ctx)
+
+    if staff.dept_code != dept_code.strip():
+        ctx["error"] = "部門代碼不正確。"
+        return templates.TemplateResponse("register_request.html", ctx)
+
+    # Identity verified — send webhook to admin
+    app_name = data.get("app_id", "Unknown")
+    apps = load_registered_apps()
+    app_info = apps.get(data.get("app_id", ""))
+    if app_info:
+        app_name = app_info.get("name", app_name)
+
+    sent = await send_registration_request_notification(staff, app_name)
+    if not sent:
+        ctx["error"] = "通知發送失敗，請聯繫 IT 部門。"
+        return templates.TemplateResponse("register_request.html", ctx)
+
+    # Invalidate the token after successful submission
+    await service.invalidate_registration_token(sqlite_session, token)
+
+    ctx["success"] = True
+    return templates.TemplateResponse("register_request.html", ctx)
+
+
+# ─── Register Page (admin-generated link) ────────────────────
 
 @router.get("/register", response_class=HTMLResponse)
 async def register_page(
     request: Request,
-    staff_id: str = Query(...),
-    app_id: str = Query(""),
-    redirect_uri: str = Query(""),
+    token: str = Query(...),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """渲染註冊頁面（設定初始密碼）。
 
-    當員工首次登入時，系統偵測到 MySQL 有此員工但 SQLite 尚無帳號，
-    自動導向此頁面讓員工設定密碼。帶入 app_id 與 redirect_uri 以便
-    註冊完成後能導回原本的登入流程。
+    管理員核對身份後產生此連結（含 registration token），發送至員工信箱。
+    Token 有效期 24 小時。
     """
+    data = await service.consume_registration_token(sqlite_session, token)
+    if data is None:
+        return templates.TemplateResponse("register.html", {
+            "request": request,
+            "staff_id": "",
+            "token": "",
+            "error": "註冊連結已過期或無效，請聯繫管理員重新發送。",
+            "success": False,
+        })
+
     return templates.TemplateResponse("register.html", {
         "request": request,
-        "staff_id": staff_id,
-        "app_id": app_id,
-        "redirect_uri": redirect_uri,
+        "staff_id": data["staff_id"],
+        "token": token,
         "error": None,
         "success": False,
     })
@@ -160,25 +282,38 @@ async def register_submit(
     staff_id: str = Form(...),
     password: str = Form(...),
     confirm_password: str = Form(...),
-    app_id: str = Form(""),
-    redirect_uri: str = Form(""),
+    token: str = Form(...),
     mysql_session: AsyncSession = Depends(get_mysql_session),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """處理註冊表單提交（設定初始密碼）。
 
     驗證流程：
-    1. 確認兩次密碼輸入一致且長度 >= 8
-    2. 查 MySQL 確認員工編號存在
-    3. 查 SQLite 確認帳號尚未註冊
-    4. 建立帳號（bcrypt 雜湊密碼）
-    5. 若有 app 上下文，導回登入頁繼續 OAuth 流程
+    1. 驗證 registration token 有效
+    2. 確認兩次密碼輸入一致且長度 >= 8
+    3. 查 MySQL 確認員工編號存在
+    4. 查 SQLite 確認帳號尚未註冊
+    5. 建立帳號（bcrypt 雜湊密碼）
+    6. 導回登入頁繼續 OAuth 流程
     """
+    # Validate registration token
+    data = await service.consume_registration_token(sqlite_session, token)
+    if data is None:
+        return templates.TemplateResponse("register.html", {
+            "request": request,
+            "staff_id": staff_id,
+            "token": "",
+            "error": "註冊連結已過期或無效，請從登入頁面重新操作。",
+            "success": False,
+        })
+
+    app_id = data["app_id"]
+    redirect_uri = data["redirect_uri"]
+
     ctx = {
         "request": request,
         "staff_id": staff_id,
-        "app_id": app_id,
-        "redirect_uri": redirect_uri,
+        "token": token,
         "error": None,
         "success": False,
     }
@@ -207,7 +342,10 @@ async def register_submit(
     # Create account
     await service.register_account(sqlite_session, staff_id, password)
 
-    # If we have app context, redirect back to login
+    # Invalidate the registration token
+    await service.invalidate_registration_token(sqlite_session, token)
+
+    # Redirect back to login to continue OAuth flow
     if app_id and redirect_uri:
         params = urlencode({"app_id": app_id, "redirect_uri": redirect_uri})
         return RedirectResponse(f"/auth/login?{params}", status_code=303)
@@ -222,6 +360,7 @@ async def register_submit(
 async def exchange_token(
     body: TokenRequest,
     mysql_session: AsyncSession = Depends(get_mysql_session),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """用 authorization code 換取 JWT Token（供 App 後端呼叫）。
 
@@ -241,8 +380,8 @@ async def exchange_token(
     if not bcrypt.verify(body.client_secret, app_info["client_secret"]):
         return JSONResponse({"error": "invalid_client"}, status_code=401)
 
-    # Consume the authorization code
-    staff_id = service.consume_auth_code(body.code, body.app_id)
+    # Consume the authorization code (SQLite-backed)
+    staff_id = await service.consume_auth_code(sqlite_session, body.code, body.app_id)
     if staff_id is None:
         return JSONResponse({"error": "invalid_grant"}, status_code=400)
 
@@ -267,6 +406,102 @@ async def exchange_token(
     }
 
 
+# ─── Change Password ─────────────────────────────────────────
+
+@router.get("/change-password", response_class=HTMLResponse)
+async def change_password_page(
+    request: Request,
+    access_token: str | None = Cookie(default=None),
+):
+    """渲染修改密碼頁面。
+
+    使用者必須帶有有效的 JWT Cookie 才能存取此頁面。
+    """
+    user = _verify_cookie(access_token)
+    if user is None:
+        return templates.TemplateResponse("change_password.html", {
+            "request": request,
+            "staff_id": "",
+            "error": "請先登入後再修改密碼。",
+            "success": False,
+        })
+
+    return templates.TemplateResponse("change_password.html", {
+        "request": request,
+        "staff_id": user["sub"],
+        "error": None,
+        "success": False,
+    })
+
+
+@router.post("/change-password")
+async def change_password_submit(
+    request: Request,
+    old_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    access_token: str | None = Cookie(default=None),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """處理修改密碼表單。
+
+    驗證流程：
+    1. 從 Cookie 中的 JWT 取得 staff_id
+    2. 確認新密碼兩次輸入一致且長度 >= 8
+    3. 驗證舊密碼正確
+    4. 更新為新密碼（bcrypt 雜湊）
+    """
+    user = _verify_cookie(access_token)
+    if user is None:
+        return templates.TemplateResponse("change_password.html", {
+            "request": request,
+            "staff_id": "",
+            "error": "請先登入後再修改密碼。",
+            "success": False,
+        })
+
+    staff_id = user["sub"]
+    ctx = {
+        "request": request,
+        "staff_id": staff_id,
+        "error": None,
+        "success": False,
+    }
+
+    if new_password != confirm_password:
+        ctx["error"] = "兩次輸入的新密碼不一致。"
+        return templates.TemplateResponse("change_password.html", ctx)
+
+    if len(new_password) < 8:
+        ctx["error"] = "新密碼長度至少 8 個字元。"
+        return templates.TemplateResponse("change_password.html", ctx)
+
+    if old_password == new_password:
+        ctx["error"] = "新密碼不能與舊密碼相同。"
+        return templates.TemplateResponse("change_password.html", ctx)
+
+    error = await service.change_password(
+        sqlite_session, staff_id, old_password, new_password
+    )
+    if error:
+        ctx["error"] = error
+        return templates.TemplateResponse("change_password.html", ctx)
+
+    ctx["success"] = True
+    return templates.TemplateResponse("change_password.html", ctx)
+
+
+def _verify_cookie(access_token: str | None) -> dict | None:
+    """Verify a JWT from cookie. Returns payload or None."""
+    if access_token is None:
+        return None
+    try:
+        settings = get_settings()
+        return verify_token(access_token, settings.public_key)
+    except Exception:
+        return None
+
+
 # ─── Forgot Password ─────────────────────────────────────────
 
 @router.get("/forgot-password", response_class=HTMLResponse)
@@ -289,13 +524,20 @@ async def forgot_password_submit(
     staff_id: str = Form(...),
     mysql_session: AsyncSession = Depends(get_mysql_session),
 ):
-    """處理忘記密碼請求。
+    """處理忘記密碼請求（含頻率限制）。
 
     查詢 MySQL 確認員工存在後，發送 Microsoft Teams Webhook
     通知管理員。Payload 包含員工姓名、編號、部門與權限等級。
     不會自動重設密碼，需由管理員手動處理。
     """
     ctx = {"request": request, "error": None, "success": False}
+
+    # Rate limit check
+    client_ip = _get_client_ip(request)
+    service.record_attempt(client_ip)
+    if not service.check_rate_limit(client_ip):
+        ctx["error"] = "請求過於頻繁，請 5 分鐘後再試。"
+        return templates.TemplateResponse("forgot_password.html", ctx)
 
     staff = await service.verify_staff(mysql_session, staff_id)
     if staff is None:

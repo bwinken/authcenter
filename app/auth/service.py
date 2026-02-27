@@ -3,6 +3,7 @@
 import json
 import secrets
 import time
+from collections import defaultdict
 
 from passlib.hash import bcrypt
 from sqlalchemy import text
@@ -11,10 +12,89 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import UserAccount
 from app.schemas import StaffInfo
 
-# In-memory authorization code store: code -> {staff_id, app_id, expires_at}
-_auth_codes: dict[str, dict] = {}
-
 AUTH_CODE_TTL = 300  # 5 minutes
+
+# ─── Rate Limiting ────────────────────────────────────────────
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+RATE_LIMIT_WINDOW = 300   # 5-minute sliding window
+RATE_LIMIT_MAX_ATTEMPTS = 10
+
+
+def check_rate_limit(client_ip: str) -> bool:
+    """Return True if the request is allowed, False if rate-limited."""
+    now = time.time()
+    attempts = _rate_limit_store[client_ip]
+    _rate_limit_store[client_ip] = [t for t in attempts if now - t < RATE_LIMIT_WINDOW]
+    return len(_rate_limit_store[client_ip]) < RATE_LIMIT_MAX_ATTEMPTS
+
+
+def record_attempt(client_ip: str) -> None:
+    """Record a request attempt for rate limiting."""
+    _rate_limit_store[client_ip].append(time.time())
+
+
+# ─── Registration Tokens (SQLite-backed) ─────────────────────
+REGISTRATION_TOKEN_TTL = 600           # 10 minutes (login → register-request flow)
+ADMIN_REGISTRATION_TOKEN_TTL = 86400   # 24 hours (admin-generated link)
+
+
+async def generate_registration_token(
+    sqlite_session: AsyncSession,
+    staff_id: str,
+    app_id: str,
+    redirect_uri: str,
+    ttl: int = REGISTRATION_TOKEN_TTL,
+) -> str:
+    """Generate a short-lived token stored in SQLite."""
+    await _cleanup_expired_registration_tokens(sqlite_session)
+    token = secrets.token_urlsafe(32)
+    expires_at = time.time() + ttl
+    await sqlite_session.execute(
+        text(
+            "INSERT INTO registration_tokens (token, staff_id, app_id, redirect_uri, expires_at) "
+            "VALUES (:token, :sid, :aid, :uri, :exp)"
+        ),
+        {"token": token, "sid": staff_id, "aid": app_id, "uri": redirect_uri, "exp": expires_at},
+    )
+    await sqlite_session.commit()
+    return token
+
+
+async def consume_registration_token(
+    sqlite_session: AsyncSession, token: str
+) -> dict | None:
+    """Validate and return registration token data. Does NOT delete (allows form resubmit)."""
+    await _cleanup_expired_registration_tokens(sqlite_session)
+    result = await sqlite_session.execute(
+        text(
+            "SELECT staff_id, app_id, redirect_uri, expires_at "
+            "FROM registration_tokens WHERE token = :token"
+        ),
+        {"token": token},
+    )
+    row = result.fetchone()
+    if row is None or time.time() > row[3]:
+        return None
+    return {"staff_id": row[0], "app_id": row[1], "redirect_uri": row[2]}
+
+
+async def invalidate_registration_token(
+    sqlite_session: AsyncSession, token: str
+) -> None:
+    """Remove a registration token after successful use."""
+    await sqlite_session.execute(
+        text("DELETE FROM registration_tokens WHERE token = :token"),
+        {"token": token},
+    )
+    await sqlite_session.commit()
+
+
+async def _cleanup_expired_registration_tokens(sqlite_session: AsyncSession) -> None:
+    await sqlite_session.execute(
+        text("DELETE FROM registration_tokens WHERE expires_at < :now"),
+        {"now": time.time()},
+    )
+    await sqlite_session.commit()
 
 SCOPE_MAP = {
     1: ["read"],
@@ -26,13 +106,15 @@ SCOPE_MAP = {
 async def verify_staff(mysql_session: AsyncSession, staff_id: str) -> StaffInfo | None:
     """Check IT Master DB (MySQL) to confirm staff exists. Returns StaffInfo or None."""
     result = await mysql_session.execute(
-        text("SELECT staff_id, name, dept_code, level FROM staff WHERE staff_id = :sid"),
+        text("SELECT staff_id, name, dept_code, level, ext FROM staff WHERE staff_id = :sid"),
         {"sid": staff_id},
     )
     row = result.fetchone()
     if row is None:
         return None
-    return StaffInfo(staff_id=row[0], name=row[1], dept_code=row[2], level=row[3])
+    return StaffInfo(
+        staff_id=row[0], name=row[1], dept_code=row[2], level=row[3], ext=row[4] or ""
+    )
 
 
 async def check_account_exists(sqlite_session: AsyncSession, staff_id: str) -> bool:
@@ -56,6 +138,36 @@ async def register_account(
         {"sid": staff_id, "ph": password_hash},
     )
     await sqlite_session.commit()
+
+
+async def change_password(
+    sqlite_session: AsyncSession,
+    staff_id: str,
+    old_password: str,
+    new_password: str,
+) -> str:
+    """Change a user's password. Returns empty string on success, error message on failure."""
+    result = await sqlite_session.execute(
+        text("SELECT password_hash FROM user_accounts WHERE staff_id = :sid"),
+        {"sid": staff_id},
+    )
+    row = result.fetchone()
+    if row is None:
+        return "帳號不存在。"
+
+    if not bcrypt.verify(old_password, row[0]):
+        return "舊密碼錯誤。"
+
+    new_hash = bcrypt.hash(new_password)
+    await sqlite_session.execute(
+        text(
+            "UPDATE user_accounts SET password_hash = :ph, updated_at = datetime('now') "
+            "WHERE staff_id = :sid"
+        ),
+        {"ph": new_hash, "sid": staff_id},
+    )
+    await sqlite_session.commit()
+    return ""
 
 
 async def authenticate(
@@ -128,37 +240,59 @@ async def check_app_access(
     return True, ""
 
 
-def generate_auth_code(staff_id: str, app_id: str) -> str:
-    """Generate a one-time authorization code (stored in memory, 5-min TTL)."""
-    _cleanup_expired_codes()
+async def generate_auth_code(
+    sqlite_session: AsyncSession, staff_id: str, app_id: str
+) -> str:
+    """Generate a one-time authorization code (stored in SQLite, 5-min TTL)."""
+    await _cleanup_expired_codes(sqlite_session)
     code = secrets.token_urlsafe(32)
-    _auth_codes[code] = {
-        "staff_id": staff_id,
-        "app_id": app_id,
-        "expires_at": time.time() + AUTH_CODE_TTL,
-    }
+    expires_at = time.time() + AUTH_CODE_TTL
+    await sqlite_session.execute(
+        text(
+            "INSERT INTO auth_codes (code, staff_id, app_id, expires_at) "
+            "VALUES (:code, :sid, :aid, :exp)"
+        ),
+        {"code": code, "sid": staff_id, "aid": app_id, "exp": expires_at},
+    )
+    await sqlite_session.commit()
     return code
 
 
-def consume_auth_code(code: str, app_id: str) -> str | None:
+async def consume_auth_code(
+    sqlite_session: AsyncSession, code: str, app_id: str
+) -> str | None:
     """Validate and consume an authorization code.
 
     Returns staff_id if valid, None otherwise.
     """
-    _cleanup_expired_codes()
-    data = _auth_codes.pop(code, None)
-    if data is None:
+    await _cleanup_expired_codes(sqlite_session)
+    result = await sqlite_session.execute(
+        text("SELECT staff_id, app_id, expires_at FROM auth_codes WHERE code = :code"),
+        {"code": code},
+    )
+    row = result.fetchone()
+    if row is None:
         return None
-    if data["app_id"] != app_id:
+
+    # Delete immediately (one-time use)
+    await sqlite_session.execute(
+        text("DELETE FROM auth_codes WHERE code = :code"),
+        {"code": code},
+    )
+    await sqlite_session.commit()
+
+    staff_id, stored_app_id, expires_at = row[0], row[1], row[2]
+    if stored_app_id != app_id:
         return None
-    if time.time() > data["expires_at"]:
+    if time.time() > expires_at:
         return None
-    return data["staff_id"]
+    return staff_id
 
 
-def _cleanup_expired_codes() -> None:
+async def _cleanup_expired_codes(sqlite_session: AsyncSession) -> None:
     """Remove expired authorization codes."""
-    now = time.time()
-    expired = [k for k, v in _auth_codes.items() if now > v["expires_at"]]
-    for k in expired:
-        del _auth_codes[k]
+    await sqlite_session.execute(
+        text("DELETE FROM auth_codes WHERE expires_at < :now"),
+        {"now": time.time()},
+    )
+    await sqlite_session.commit()

@@ -7,11 +7,13 @@
 - **OAuth2 Authorization Code Flow** — App 重導登入、code 換 token 標準流程
 - **RS256 JWT** — 非對稱加密，Auth Center 簽發、各 App 用公鑰驗證
 - **雙資料庫架構** — MySQL（員工主檔，唯讀）+ SQLite（帳號與權限，讀寫）
-- **自動註冊** — 員工首次登入自動引導設定密碼
+- **管理員審核註冊** — 員工首次登入需驗證身份（分機 + 部門代碼），通過後 Teams 通知管理員，由管理員產生註冊連結
 - **權限分級** — Level 1/2/3 自動映射為 `read` / `read+write` / `read+write+admin` scopes
 - **App 存取控制** — 依部門與等級限制 App 存取權限
+- **修改密碼** — 使用者可透過 JWT Cookie 驗證後自行修改密碼
 - **忘記密碼** — 透過 Microsoft Teams Webhook 通知管理員處理
-- **Jinja2 UI** — 內建登入、註冊、忘記密碼頁面
+- **Rate Limiting** — 同一 IP 5 分鐘內最多 10 次登入嘗試，防止暴力破解
+- **Jinja2 UI** — 內建登入、身份驗證、註冊、修改密碼、忘記密碼頁面
 
 ## 專案結構
 
@@ -34,7 +36,9 @@ auth-center/
 │   └── apps.yaml            # 已註冊 App 清單
 ├── keys/                    # RSA 金鑰對（gitignore）
 ├── scripts/
-│   └── init_db.sql          # SQLite 表結構
+│   ├── init_db.sql                # SQLite 表結構
+│   ├── reset_password.py          # 管理員：重設使用者密碼
+│   └── generate_register_link.py  # 管理員：產生註冊連結
 ├── middleware_example/
 │   └── app_middleware.py    # App 端驗證範例
 ├── generate_keys.py         # 金鑰產生腳本
@@ -129,7 +133,7 @@ sequenceDiagram
     A-->>U: 回傳受保護的內容
 ```
 
-### 分支流程：首次登入（自動註冊）
+### 分支流程：首次登入（管理員審核註冊）
 
 ```mermaid
 sequenceDiagram
@@ -137,6 +141,8 @@ sequenceDiagram
     participant C as Auth Center
     participant M as MySQL
     participant S as SQLite
+    participant T as Microsoft Teams
+    participant A as 管理員
 
     U->>C: POST /auth/login {staff_id, password}
     C->>M: 查詢員工
@@ -144,10 +150,25 @@ sequenceDiagram
     C->>S: 查詢帳號
     S-->>C: 帳號不存在 ✗
 
-    C-->>U: 303 重導至 /auth/register?staff_id=X&app_id=Y&redirect_uri=Z
-    U->>C: 使用者設定密碼，POST /auth/register
-    C->>M: 再次確認員工存在
-    M-->>C: ✓
+    C->>S: 產生 registration token（10 分鐘有效）
+    C-->>U: 303 重導至 /auth/register-request?token=xxx
+
+    Note over U,C: 使用者填寫身份驗證資訊
+    U->>C: POST /auth/register-request {ext, dept_code, token}
+    C->>M: 查詢員工資料（含分機、部門）
+    M-->>C: 回傳 staff info
+    C->>C: 核對分機號碼與部門代碼
+    C->>T: 發送 Adaptive Card 通知
+    T-->>C: 200 OK
+    C-->>U: 「身份驗證通過，已通知管理員。」
+
+    Note over A: 管理員收到 Teams 通知
+    A->>A: python scripts/generate_register_link.py EMP001
+    A->>U: 將註冊連結發送至員工信箱（手動）
+
+    Note over U,C: 員工收到信件，點擊註冊連結
+    U->>C: GET /auth/register?token=yyy（24 小時有效）
+    U->>C: POST /auth/register {password, confirm_password}
     C->>S: INSERT user_accounts（bcrypt 雜湊密碼）
     S-->>C: 帳號建立成功
 
@@ -208,10 +229,10 @@ sequenceDiagram
 | 步驟 | 操作 | 資料來源 | 失敗結果 |
 |------|------|----------|----------|
 | ① | 查詢員工是否在職 | MySQL `staff` 表 | 回傳「員工編號不存在，請確認後重試。」 |
-| ② | 查詢帳號是否已註冊 | SQLite `user_accounts` 表 | 303 重導至 `/auth/register`（自動註冊） |
+| ② | 查詢帳號是否已註冊 | SQLite `user_accounts` 表 | 303 重導至 `/auth/register-request`（身份驗證頁） |
 | ③ | bcrypt 比對密碼 | SQLite `user_accounts` 表 | 回傳「密碼錯誤，請重新輸入。」 |
 | ④ | 檢查 App 存取規則 | SQLite `app_access_rules` 表 | 回傳「部門無權」或「等級不足」 |
-| ⑤ | 產生 Authorization Code | 記憶體（5 分鐘 TTL） | — |
+| ⑤ | 產生 Authorization Code | SQLite `auth_codes` 表（5 分鐘 TTL） | — |
 
 所有驗證失敗都**不會產生 code**，使用者停留在 Auth Center 頁面直到通過驗證或放棄。
 
@@ -245,9 +266,13 @@ graph LR
 |------|------|------|
 | `GET` | `/auth/login?app_id=X&redirect_uri=Y` | 渲染登入頁面 |
 | `POST` | `/auth/login` | 提交登入表單，成功後 302 帶 code 回 App |
-| `GET` | `/auth/register?staff_id=X&app_id=Y&redirect_uri=Z` | 渲染註冊頁面（首次登入設定密碼） |
-| `POST` | `/auth/register` | 提交註冊，完成後導回登入頁 |
+| `GET` | `/auth/register-request?token=X` | 渲染身份驗證頁面（分機 + 部門代碼） |
+| `POST` | `/auth/register-request` | 提交身份驗證，通過後觸發 Teams Webhook |
+| `GET` | `/auth/register?token=X` | 渲染註冊頁面（管理員產生的連結） |
+| `POST` | `/auth/register` | 提交註冊（設定密碼），完成後導回登入頁 |
 | `POST` | `/auth/token` | App 後端用 code + client_secret 換取 JWT |
+| `GET` | `/auth/change-password` | 渲染修改密碼頁面（需 JWT Cookie） |
+| `POST` | `/auth/change-password` | 提交修改密碼 |
 | `GET` | `/auth/forgot-password` | 渲染忘記密碼頁面 |
 | `POST` | `/auth/forgot-password` | 觸發 Teams Webhook 通知管理員 |
 
@@ -584,7 +609,7 @@ Content-Type: application/json
 Auth Center 收到後會：
 1. 查找 `app_id` 是否已註冊 → 否則回 `401 invalid_client`
 2. 用 bcrypt 比對 `client_secret` 與 `apps.yaml` 中的 hash → 不匹配則回 `401 invalid_client`
-3. 從記憶體中取出 `code` 對應的 `staff_id` + `app_id` → 不存在或過期回 `400 invalid_grant`
+3. 從 SQLite 中取出 `code` 對應的 `staff_id` + `app_id` → 不存在或過期回 `400 invalid_grant`
 4. 驗證 code 中的 `app_id` 與請求的 `app_id` 一致 → 不一致回 `400 invalid_grant`
 5. 消耗 code（一次性使用，立即刪除）
 6. 查詢 MySQL 取得員工資料 → 查無資料回 `400 staff_not_found`
@@ -662,9 +687,12 @@ flowchart TD
 
     G -- 通過 --> H[Auth Center 302 回 App<br/>帶 authorization code]
     G -- 失敗 --> I[顯示錯誤，留在登入頁]
-    G -- 需註冊 --> J[303 重導至註冊頁]
-    J --> K[設定密碼後導回登入頁]
-    K --> F
+    G -- 需註冊 --> J[303 重導至身份驗證頁]
+    J --> K[填寫分機 + 部門代碼]
+    K --> L2[Teams 通知管理員]
+    L2 --> L3[管理員產生註冊連結<br/>發送至員工信箱]
+    L3 --> L4[員工設定密碼]
+    L4 --> F
 
     H --> L[App 後端用 code + secret<br/>POST /auth/token 換 JWT]
     L --> M{換 Token 成功？}
@@ -697,6 +725,7 @@ flowchart TD
 | `name` | VARCHAR | 姓名 |
 | `dept_code` | VARCHAR | 部門代碼 |
 | `level` | INT | 權限等級 (1-3) |
+| `ext` | VARCHAR | 分機號碼（用於身份驗證） |
 
 **Auth Local DB (SQLite，讀寫)**
 
@@ -717,3 +746,71 @@ flowchart TD
 | `app_id` | VARCHAR(100) UNIQUE | App 識別碼 |
 | `allowed_depts` | TEXT | JSON 陣列，允許部門（空 = 全部） |
 | `min_level` | INTEGER | 最低等級要求 |
+
+`auth_codes` — 一次性 Authorization Code
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `code` | VARCHAR(64) PK | 隨機授權碼 |
+| `staff_id` | VARCHAR(50) | 員工編號 |
+| `app_id` | VARCHAR(100) | 目標 App |
+| `expires_at` | REAL | 過期時間（Unix timestamp，5 分鐘） |
+
+`registration_tokens` — 註冊令牌（身份驗證 / 管理員產生）
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `token` | VARCHAR(64) PK | 隨機令牌 |
+| `staff_id` | VARCHAR(50) | 員工編號 |
+| `app_id` | VARCHAR(100) | 來源 App（可為空） |
+| `redirect_uri` | TEXT | 註冊完成後的導回 URI |
+| `expires_at` | REAL | 過期時間（登入產生 10 分鐘 / 管理員產生 24 小時） |
+
+## 管理員 CLI 工具
+
+### 產生註冊連結
+
+當 Teams 收到新員工註冊請求後，管理員核對身份後執行此指令產生 24 小時有效的註冊連結：
+
+```bash
+# 基本用法
+python scripts/generate_register_link.py EMP001
+
+# 帶 App 資訊（註冊完成後可直接導回 App 登入）
+python scripts/generate_register_link.py EMP001 --app-id ai_chat_app --redirect-uri http://localhost:8001/callback
+```
+
+產出範例：
+```
+[OK] Registration link generated for EMP001
+     Expires in 24 hours
+
+     http://localhost:8000/auth/register?token=abc123...
+
+Please send this link to the employee's email.
+```
+
+### 重設密碼
+
+當 Teams 收到忘記密碼通知後，管理員執行此指令重設密碼：
+
+```bash
+# 自動產生隨機密碼
+python scripts/reset_password.py EMP001
+
+# 指定密碼
+python scripts/reset_password.py EMP001 --password NewPass123
+```
+
+## 安全機制
+
+| 機制 | 說明 |
+|------|------|
+| **Rate Limiting** | 同一 IP 5 分鐘內最多 10 次登入/忘記密碼嘗試 |
+| **Redirect URI 驗證** | GET 和 POST 均嚴格比對 `apps.yaml` 中的設定，防止 Open Redirect |
+| **註冊頁面保護** | 所有註冊相關頁面均需有效 token 才能存取 |
+| **身份驗證** | 首次註冊需核對分機號碼與部門代碼（比對 MySQL） |
+| **bcrypt 密碼雜湊** | 密碼使用 bcrypt 單向雜湊儲存 |
+| **Authorization Code** | 一次性、5 分鐘過期、SQLite 儲存（支援多 worker） |
+| **HttpOnly Cookie** | JWT 存於 HttpOnly Cookie，JS 無法存取 |
+| **RS256 非對稱簽名** | 私鑰僅 Auth Center 持有，App 端只需公鑰驗證 |
