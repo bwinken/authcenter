@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Admin - AuthCenter{% endblock %}</title>
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <style>
+        :root {
+            --primary: #10a37f;
+            --primary-hover: #0d8a6a;
+            --text-main: #2d333a;
+            --text-muted: #6e7781;
+            --border: #d1d5db;
+            --border-focus: #10a37f;
+            --input-bg: #fff;
+            --page-bg: #f9fafb;
+            --nav-bg: #fff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, system-ui, sans-serif;
+            background: var(--page-bg);
+            min-height: 100vh;
+            color: var(--text-main);
+        }
+
+        /* ── Navbar ── */
+        .admin-nav {
+            background: var(--nav-bg);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            height: 52px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .nav-brand {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--primary);
+            text-decoration: none;
+            margin-right: 32px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-brand svg {
+            width: 20px;
+            height: 20px;
+            fill: var(--primary);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .nav-links a {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            transition: all 0.15s;
+        }
+
+        .nav-links a:hover { color: var(--text-main); background: #f3f4f6; }
+        .nav-links a.active { color: var(--primary); background: #ecfdf5; }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .nav-right .admin-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: #ecfdf5;
+            color: var(--primary);
+        }
+
+        .nav-right a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .nav-right a:hover { color: #ef4444; }
+
+        /* ── Main Content ── */
+        .admin-main {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 28px 24px;
+        }
+
+        .page-header {
+            margin-bottom: 24px;
+        }
+
+        .page-header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            text-align: left;
+        }
+
+        .page-header p {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* ── Card ── */
+        .admin-card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+
+        .admin-card h2 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        /* ── Table ── */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .data-table th {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 2px solid var(--border);
+            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .data-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .data-table tr:last-child td { border-bottom: none; }
+
+        /* ── Badges ── */
+        .badge {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 500;
+            padding: 2px 7px;
+            border-radius: 4px;
+            margin-right: 3px;
+        }
+        .badge-green { background: #ecfdf5; color: #166534; }
+        .badge-blue { background: #eff6ff; color: #1e40af; }
+        .badge-gray { background: #f3f4f6; color: #374151; }
+        .badge-red { background: #fef2f2; color: #991b1b; }
+
+        /* ── Forms ── */
+        .form-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .form-row input, .form-row select {
+            flex: 1;
+            min-width: 120px;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        .form-row input:focus, .form-row select:focus {
+            outline: none;
+            border-color: var(--border-focus);
+        }
+
+        /* ── Buttons ── */
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background-color 0.15s;
+        }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-danger { background: #fff; color: #ef4444; border: 1px solid #ef4444; }
+        .btn-danger:hover { background: #fef2f2; }
+        .btn-sm { padding: 5px 12px; font-size: 12px; }
+
+        /* ── Alerts ── */
+        .alert {
+            padding: 12px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+        .alert-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+
+        /* ── Stats ── */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .stat-card .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+        .stat-card .stat-label {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* ── Empty state ── */
+        .empty-state {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 14px;
+            padding: 24px 0;
+        }
+
+        /* ── Checkbox group ── */
+        .checkbox-group {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            font-size: 13px;
+        }
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+        }
+
+        @media (max-width: 768px) {
+            .admin-nav { padding: 0 12px; }
+            .admin-main { padding: 16px 12px; }
+            .nav-links a { padding: 8px 10px; font-size: 12px; }
+        }
+    </style>
+    {% block extra_style %}{% endblock %}
+</head>
+<body>
+    <nav class="admin-nav">
+        <a class="nav-brand" href="/admin/dashboard">
+            <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.47 4.74-3.53 8.93-7 10.01V12h-7V6.39l7-3.11v8.71z"/></svg>
+            AuthCenter
+        </a>
+        <div class="nav-links">
+            <a href="/admin/dashboard" class="{% if active_nav == 'dashboard' %}active{% endif %}">Dashboard</a>
+            {% if is_super %}
+            <a href="/admin/apps" class="{% if active_nav == 'apps' %}active{% endif %}">App 管理</a>
+            {% endif %}
+            <a href="/admin/permissions" class="{% if active_nav == 'permissions' %}active{% endif %}">權限管理</a>
+            {% if is_super %}
+            <a href="/admin/admins" class="{% if active_nav == 'admins' %}active{% endif %}">Admin 管理</a>
+            {% endif %}
+            <a href="/admin/audit-log" class="{% if active_nav == 'audit' %}active{% endif %}">操作紀錄</a>
+        </div>
+        <div class="nav-right">
+            <span>{{ admin_name }}</span>
+            <span class="admin-badge">{% if is_super %}Super Admin{% else %}App Admin{% endif %}</span>
+            <a href="/admin/logout">登出</a>
+        </div>
+    </nav>
+
+    <main class="admin-main">
+        {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+        {% endif %}
+        {% if success %}
+        <div class="alert alert-success">{{ success }}</div>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

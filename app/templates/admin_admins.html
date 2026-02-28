@@ -1,0 +1,69 @@
+{% extends "admin_base.html" %}
+{% block title %}Admin 管理 - AuthCenter Admin{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>App Admin 管理</h1>
+    <p>指定員工為特定 App 的管理員，App Admin 可以管理其負責 App 的使用者權限</p>
+</div>
+
+<!-- Current App Admins -->
+<div class="admin-card">
+    <h2>已指派的 App Admin（{{ app_admins | length }}）</h2>
+    {% if app_admins %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>員工名稱</th>
+                <th>管理的 App</th>
+                <th>指派者</th>
+                <th>指派時間</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for aa in app_admins %}
+            <tr>
+                <td>{{ aa.employee_name }}</td>
+                <td>
+                    <span class="badge badge-green">{{ apps.get(aa.app_id, {}).get('name', aa.app_id) }}</span>
+                    <span style="font-size: 11px; color: var(--text-muted);">{{ aa.app_id }}</span>
+                </td>
+                <td style="color: var(--text-muted);">{{ aa.assigned_by }}</td>
+                <td style="font-size: 12px; color: var(--text-muted);">{{ aa.assigned_at }}</td>
+                <td>
+                    <form method="POST" action="/admin/admins/remove" style="display: inline;">
+                        <input type="hidden" name="employee_name" value="{{ aa.employee_name }}">
+                        <input type="hidden" name="app_id" value="{{ aa.app_id }}">
+                        <button type="submit" class="btn btn-danger btn-sm">移除</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">尚未指派任何 App Admin。</div>
+    {% endif %}
+</div>
+
+<!-- Assign New App Admin -->
+<div class="admin-card">
+    <h2>指派 App Admin</h2>
+    <form method="POST" action="/admin/admins/assign">
+        <div class="form-row">
+            <input type="text" name="employee_name" placeholder="員工名稱（如 kane.beh）" required>
+            <select name="app_id" required>
+                <option value="" disabled selected>選擇 App</option>
+                {% for aid, info in apps.items() %}
+                <option value="{{ aid }}">{{ info.get('name', aid) }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary">指派</button>
+        </div>
+        <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+            該員工必須先有 Auth Center 帳號才能登入管理後台。
+        </p>
+    </form>
+</div>
+{% endblock %}

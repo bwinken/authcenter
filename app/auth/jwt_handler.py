@@ -16,10 +16,12 @@ def create_token(
     dept: str,
     scopes: list[str],
     aud: str,
+    expire_hours: int | None = None,
 ) -> str:
     """Sign a JWT with the private key. Returns the encoded token string."""
     settings = get_settings()
     now = datetime.now(timezone.utc)
+    hours = expire_hours if expire_hours is not None else TOKEN_EXPIRE_HOURS
     payload = {
         "sub": sub,
         "name": name,
@@ -27,7 +29,7 @@ def create_token(
         "scopes": scopes,
         "aud": aud,
         "iat": now,
-        "exp": now + timedelta(hours=TOKEN_EXPIRE_HOURS),
+        "exp": now + timedelta(hours=hours),
     }
     return jwt.encode(payload, settings.private_key, algorithm=ALGORITHM)
 

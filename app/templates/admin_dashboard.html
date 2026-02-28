@@ -1,0 +1,111 @@
+{% extends "admin_base.html" %}
+{% block title %}Dashboard - AuthCenter Admin{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <p>AuthCenter 管理後台總覽</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{% if is_super %}{{ apps | length }}{% else %}{{ admin_apps | length }}{% endif %}</div>
+        <div class="stat-label">{% if is_super %}已註冊 App{% else %}管理中的 App{% endif %}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ perm_count }}</div>
+        <div class="stat-label">個人權限記錄</div>
+    </div>
+    {% if is_super %}
+    <div class="stat-card">
+        <div class="stat-value">{{ admin_count }}</div>
+        <div class="stat-label">App Admin 指派</div>
+    </div>
+    {% endif %}
+</div>
+
+{% if is_super %}
+<div class="admin-card">
+    <h2>已註冊的 App</h2>
+    {% if apps %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>App ID</th>
+                <th>名稱</th>
+                <th>允許部門</th>
+                <th>最低 Level</th>
+                <th>Redirect URI</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for aid, info in apps.items() %}
+            <tr>
+                <td><code style="font-size: 12px;">{{ aid }}</code></td>
+                <td>{{ info.get('name', aid) }}</td>
+                <td>
+                    {% set depts = info.get('allowed_depts', []) %}
+                    {% if depts %}
+                        {% for d in depts %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                    {% else %}
+                        <span style="color: var(--text-muted); font-size: 12px;">全部</span>
+                    {% endif %}
+                </td>
+                <td>{{ info.get('min_level', 1) }}</td>
+                <td style="font-size: 12px; color: var(--text-muted); max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ info.get('redirect_uri', '') }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">尚未註冊任何 App。</div>
+    {% endif %}
+</div>
+{% else %}
+<div class="admin-card">
+    <h2>您管理的 App</h2>
+    {% if admin_apps %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>App ID</th>
+                <th>名稱</th>
+                <th>允許部門</th>
+                <th>最低 Level</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for aid in admin_apps %}
+            {% set info = apps.get(aid, {}) %}
+            <tr>
+                <td><code style="font-size: 12px;">{{ aid }}</code></td>
+                <td>{{ info.get('name', aid) }}</td>
+                <td>
+                    {% set depts = info.get('allowed_depts', []) %}
+                    {% if depts %}
+                        {% for d in depts %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                    {% else %}
+                        <span style="color: var(--text-muted); font-size: 12px;">全部</span>
+                    {% endif %}
+                </td>
+                <td>{{ info.get('min_level', 1) }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">您目前沒有管理任何 App。</div>
+    {% endif %}
+</div>
+{% endif %}
+
+<div style="display: flex; gap: 12px; flex-wrap: wrap;">
+    {% if is_super %}
+    <a href="/admin/apps" class="btn btn-primary" style="text-decoration: none; text-align: center;">管理 App 設定</a>
+    {% endif %}
+    <a href="/admin/permissions" class="btn btn-primary" style="text-decoration: none; text-align: center;">管理使用者權限</a>
+    {% if is_super %}
+    <a href="/admin/admins" class="btn btn-primary" style="text-decoration: none; text-align: center;">管理 App Admin</a>
+    {% endif %}
+</div>
+{% endblock %}

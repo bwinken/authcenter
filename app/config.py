@@ -33,6 +33,10 @@ class Settings:
     # Server
     AUTH_CENTER_BASE_URL: str = os.getenv("AUTH_CENTER_BASE_URL", "http://localhost:8000")
 
+    # Super Admin
+    ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")
+    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
+
     @property
     def mysql_url(self) -> str:
         return (
@@ -76,3 +80,20 @@ def load_registered_apps() -> dict[str, dict]:
         _apps_cache = {app["app_id"]: app for app in data.get("apps", [])}
         _apps_mtime = mtime
     return _apps_cache
+
+
+def save_registered_apps(apps_dict: dict[str, dict]) -> None:
+    """Write apps dict back to config/apps.yaml and update cache."""
+    global _apps_cache, _apps_mtime
+    apps_file = BASE_DIR / "config" / "apps.yaml"
+    apps_list = []
+    for app_id, info in apps_dict.items():
+        entry = {"app_id": app_id}
+        for key in ("client_secret", "redirect_uri", "name", "allowed_depts", "min_level"):
+            if key in info:
+                entry[key] = info[key]
+        apps_list.append(entry)
+    with open(apps_file, "w", encoding="utf-8") as f:
+        yaml.dump({"apps": apps_list}, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    _apps_cache = apps_dict
+    _apps_mtime = apps_file.stat().st_mtime

@@ -1,0 +1,131 @@
+{% extends "admin_base.html" %}
+{% block title %}App 管理 - AuthCenter Admin{% endblock %}
+
+{% block extra_style %}
+<style>
+    .secret-box {
+        background: #fffbeb;
+        border: 1px solid #fcd34d;
+        border-radius: 6px;
+        padding: 14px;
+        margin-bottom: 20px;
+        font-size: 13px;
+    }
+    .secret-box strong { color: #92400e; }
+    .secret-box code {
+        display: block;
+        margin-top: 8px;
+        padding: 8px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        font-size: 13px;
+        word-break: break-all;
+    }
+    .app-edit-form { display: flex; gap: 8px; align-items: center; }
+    .app-edit-form input, .app-edit-form select {
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 12px;
+        font-family: inherit;
+    }
+    .app-edit-form input:focus, .app-edit-form select:focus {
+        outline: none;
+        border-color: var(--border-focus);
+    }
+    details summary { cursor: pointer; font-weight: 500; font-size: 13px; color: var(--text-muted); }
+    details summary:hover { color: var(--text-main); }
+    details[open] summary { margin-bottom: 12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>App 管理</h1>
+    <p>管理已註冊的應用程式設定</p>
+</div>
+
+{% if new_secret %}
+<div class="secret-box">
+    <strong>新 App「{{ new_secret.app_id }}」的 Client Secret（請立即複製，此後無法再次查看）：</strong>
+    <code>{{ new_secret.secret }}</code>
+</div>
+{% endif %}
+
+<!-- App List -->
+<div class="admin-card">
+    <h2>已註冊的 App（{{ apps | length }}）</h2>
+    {% if apps %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>App ID</th>
+                <th>名稱</th>
+                <th>允許部門</th>
+                <th>最低 Level</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for aid, info in apps.items() %}
+            <tr>
+                <td><code style="font-size: 12px;">{{ aid }}</code></td>
+                <td>{{ info.get('name', aid) }}</td>
+                <td>
+                    <form method="POST" action="/admin/apps/update" class="app-edit-form">
+                        <input type="hidden" name="app_id" value="{{ aid }}">
+                        <input type="text" name="allowed_depts"
+                               value="{{ info.get('allowed_depts', []) | join(', ') }}"
+                               placeholder="全部（留空）" style="width: 130px;"
+                               title="以逗號分隔，如：IT, FIN, RD">
+                </td>
+                <td>
+                        <select name="min_level" style="width: 60px;">
+                            {% for lv in [1, 2, 3] %}
+                            <option value="{{ lv }}" {% if info.get('min_level', 1) == lv %}selected{% endif %}>{{ lv }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-primary btn-sm">儲存</button>
+                    </form>
+                </td>
+                <td>
+                    <details>
+                        <summary>刪除</summary>
+                        <form method="POST" action="/admin/apps/delete" style="display: inline;">
+                            <input type="hidden" name="app_id" value="{{ aid }}">
+                            <button type="submit" class="btn btn-danger btn-sm"
+                                    onclick="return confirm('確定要刪除 {{ info.get('name', aid) }}？此操作無法復原。')">
+                                確認刪除
+                            </button>
+                        </form>
+                    </details>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">尚未註冊任何 App。</div>
+    {% endif %}
+</div>
+
+<!-- Add New App -->
+<div class="admin-card">
+    <h2>新增 App</h2>
+    <form method="POST" action="/admin/apps/create">
+        <div class="form-row">
+            <input type="text" name="new_app_id" placeholder="App ID（如 ai_chat_app）" required
+                   pattern="[a-z0-9_]+" title="僅限小寫字母、數字和底線">
+            <input type="text" name="new_app_name" placeholder="顯示名稱" required>
+        </div>
+        <div class="form-row">
+            <input type="text" name="new_redirect_uri" placeholder="Redirect URI（如 http://localhost:8001/auth/callback）" required style="flex: 2;">
+            <button type="submit" class="btn btn-primary">新增</button>
+        </div>
+        <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+            Client Secret 將自動產生，新增後顯示一次。
+        </p>
+    </form>
+</div>
+{% endblock %}

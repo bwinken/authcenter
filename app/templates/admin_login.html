@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}管理員登入 - AuthCenter{% endblock %}
+
+{% block content %}
+<h1>管理員登入</h1>
+<p class="subtitle">AuthCenter 管理後台</p>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<form method="POST" action="/admin/login">
+    <div class="form-group">
+        <label for="username">帳號</label>
+        <input type="text" id="username" name="username" placeholder="使用者名稱" required autofocus>
+    </div>
+    <div class="form-group">
+        <label for="password">密碼</label>
+        <input type="password" id="password" name="password" placeholder="密碼" required>
+    </div>
+    <button type="submit" class="btn btn-primary">登入</button>
+</form>
+{% endblock %}
+
+{% block links %}
+<a href="/auth/login">返回使用者登入</a>
+{% endblock %}
