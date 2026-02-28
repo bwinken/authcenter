@@ -8,12 +8,18 @@
 - **RS256 JWT** — 非對稱加密，Auth Center 簽發、各 App 用公鑰驗證
 - **雙資料庫架構** — MySQL（員工主檔，唯讀）+ SQLite（帳號與權限，讀寫）
 - **管理員審核註冊** — 員工首次登入需驗證身份（分機 + 部門代碼），通過後 Teams 通知管理員，由管理員產生註冊連結
-- **權限分級** — Level 1/2/3 自動映射為 `read` / `read+write` / `read+write+admin` scopes
-- **App 存取控制** — 依部門與等級限制 App 存取權限
+- **Super Admin 管理後台** — .env 設定 super admin 帳密，可管理所有 App 設定、使用者權限、指定 App Admin
+- **App Admin** — Super Admin 可指定員工為特定 App 的管理員，App Admin 只能管理自己負責 App 的使用者權限
+- **Per-User-Per-App 權限** — Admin 可為每個使用者針對每個 App 設定個別權限（含自訂 scopes）
+- **權限分級** — Level 1/2/3 自動映射為 `read` / `read+write` / `read+write+admin` scopes（作為 fallback）
+- **App 存取控制** — 優先查個人權限，沒設定則 fallback 到部門/等級規則
+- **使用者 Dashboard** — 使用者可查看自己有權限存取的 App 列表
+- **Admin 權限管理** — Web 管理介面 + CLI 工具，可授予/撤銷使用者的 App 權限
+- **Audit Log** — 所有 admin 操作（登入、授權、撤銷、新增/刪除 App）均有紀錄
 - **修改密碼** — 使用者可透過 JWT Cookie 驗證後自行修改密碼
 - **忘記密碼** — 透過 Microsoft Teams Webhook 通知管理員處理
 - **Rate Limiting** — 同一 IP 5 分鐘內最多 10 次登入嘗試，防止暴力破解
-- **Jinja2 UI** — 內建登入、身份驗證、註冊、修改密碼、忘記密碼頁面
+- **Jinja2 UI** — 內建登入、Dashboard、身份驗證、註冊、修改密碼、忘記密碼、Admin 權限管理頁面
 
 ## 專案結構
 
@@ -26,9 +32,11 @@ auth-center/
 │   ├── models.py            # SQLAlchemy models
 │   ├── schemas.py           # Pydantic schemas
 │   ├── auth/
-│   │   ├── routes.py        # API 路由
-│   │   ├── service.py       # 核心業務邏輯
+│   │   ├── routes.py        # 認證 API 路由 + Dashboard
+│   │   ├── service.py       # 核心業務邏輯（含權限管理）
 │   │   └── jwt_handler.py   # RS256 JWT 簽發與驗證
+│   ├── admin/
+│   │   └── routes.py        # Admin 管理後台路由（Super Admin + App Admin）
 │   ├── webhook/
 │   │   └── teams.py         # Teams Webhook 通知
 │   └── templates/           # Jinja2 前端模板
@@ -38,7 +46,8 @@ auth-center/
 ├── scripts/
 │   ├── init_db.sql                # SQLite 表結構
 │   ├── reset_password.py          # 管理員：重設使用者密碼
-│   └── generate_register_link.py  # 管理員：產生註冊連結
+│   ├── generate_register_link.py  # 管理員：產生註冊連結
+│   └── manage_permissions.py      # 管理員：管理使用者 App 權限
 ├── middleware_example/
 │   └── app_middleware.py    # App 端驗證範例
 ├── generate_keys.py         # 金鑰產生腳本
@@ -228,9 +237,9 @@ sequenceDiagram
 
 | 步驟 | 操作 | 資料來源 | 失敗結果 |
 |------|------|----------|----------|
-| ① | 查詢員工是否在職 | MySQL `staff` 表 | 回傳「使用者名稱不存在，請確認後重試。」 |
+| ① | 查詢員工是否在職 | MySQL `staff` 表 | 回傳「使用者名稱或密碼錯誤」（統一錯誤訊息防列舉） |
 | ② | 查詢帳號是否已註冊 | SQLite `user_accounts` 表 | 303 重導至 `/auth/register-request`（身份驗證頁） |
-| ③ | bcrypt 比對密碼 | SQLite `user_accounts` 表 | 回傳「密碼錯誤，請重新輸入。」 |
+| ③ | bcrypt 比對密碼 | SQLite `user_accounts` 表 | 回傳「使用者名稱或密碼錯誤」（統一錯誤訊息） |
 | ④ | 檢查 App 存取規則 | `apps.yaml` 設定檔 | 回傳「部門無權」或「等級不足」 |
 | ⑤ | 產生 Authorization Code | SQLite `auth_codes` 表（5 分鐘 TTL） | — |
 
@@ -275,6 +284,22 @@ graph LR
 | `POST` | `/auth/change-password` | 提交修改密碼 |
 | `GET` | `/auth/forgot-password` | 渲染忘記密碼頁面 |
 | `POST` | `/auth/forgot-password` | 觸發 Teams Webhook 通知管理員 |
+| `GET` | `/auth/dashboard` | 使用者 Dashboard（需 JWT Cookie），顯示有權限的 App 列表 |
+| `GET` | `/admin/login` | Admin 登入頁面 |
+| `POST` | `/admin/login` | 驗證 admin 帳密（Super Admin 或 App Admin） |
+| `GET` | `/admin/logout` | Admin 登出 |
+| `GET` | `/admin/dashboard` | Admin 總覽頁 |
+| `GET` | `/admin/apps` | App 管理頁面（僅 Super Admin） |
+| `POST` | `/admin/apps/create` | 新增 App |
+| `POST` | `/admin/apps/update` | 更新 App 存取規則 |
+| `POST` | `/admin/apps/delete` | 刪除 App |
+| `GET` | `/admin/permissions` | 使用者權限管理頁面 |
+| `POST` | `/admin/permissions` | 新增/更新使用者的 App 權限 |
+| `POST` | `/admin/permissions/revoke` | 撤銷使用者的 App 權限 |
+| `GET` | `/admin/admins` | App Admin 管理頁面（僅 Super Admin） |
+| `POST` | `/admin/admins/assign` | 指定 App Admin |
+| `POST` | `/admin/admins/remove` | 移除 App Admin |
+| `GET` | `/admin/audit-log` | 操作紀錄頁面 |
 
 ### `POST /auth/token` 詳細規格
 
@@ -330,7 +355,7 @@ graph LR
 | `sub` | 使用者名稱（來自 MySQL staff_id，如 kane.beh） |
 | `name` | 員工姓名 |
 | `dept` | 部門代碼 |
-| `scopes` | 權限範圍清單，由員工等級自動映射 |
+| `scopes` | 權限範圍清單（個人權限優先，否則由員工等級自動映射） |
 | `aud` | 此 Token 預定存取的 App ID，App 端必須驗證此欄位 |
 | `iat` | Token 簽發時間 (Unix timestamp) |
 | `exp` | Token 過期時間（簽發後 12 小時） |
@@ -610,7 +635,7 @@ Auth Center 收到後會：
 4. 驗證 code 中的 `app_id` 與請求的 `app_id` 一致 → 不一致回 `400 invalid_grant`
 5. 消耗 code（一次性使用，立即刪除）
 6. 查詢 MySQL 取得員工資料 → 查無資料回 `400 staff_not_found`
-7. 依據員工 Level 映射 scopes
+7. 查詢個人權限 scopes（無則依員工 Level 映射）
 8. 用 `private.pem` 簽發 RS256 JWT（有效 12 小時）
 9. 回傳 `{ "access_token": "eyJ...", "token_type": "bearer", "expires_in": 43200 }`
 
@@ -754,6 +779,94 @@ flowchart TD
 | `redirect_uri` | TEXT | 註冊完成後的導回 URI |
 | `expires_at` | REAL | 過期時間（登入產生 10 分鐘 / 管理員產生 24 小時） |
 
+`user_app_permissions` — Per-User-Per-App 個人權限
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `employee_name` | VARCHAR(50) PK | 使用者名稱 |
+| `app_id` | VARCHAR(100) PK | 目標 App |
+| `scopes` | TEXT | 權限範圍（JSON array，如 `["read", "write"]`） |
+| `granted_by` | VARCHAR(50) | 授權者名稱 |
+| `granted_at` | DATETIME | 授權時間 |
+
+`app_admins` — App Admin 指派
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `employee_name` | VARCHAR(50) PK | 員工名稱 |
+| `app_id` | VARCHAR(100) PK | 管理的 App |
+| `assigned_by` | VARCHAR(50) | 指派者（Super Admin） |
+| `assigned_at` | DATETIME | 指派時間 |
+
+`admin_audit_log` — Admin 操作紀錄
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增 ID |
+| `admin_name` | VARCHAR(50) | 操作者 |
+| `action` | VARCHAR(100) | 操作類型（login / grant_permission / create_app 等） |
+| `target` | TEXT | 操作對象 |
+| `details` | TEXT | 詳細資訊 |
+| `ip_address` | VARCHAR(45) | 來源 IP |
+| `created_at` | DATETIME | 操作時間 |
+
+## Admin 管理後台
+
+### 兩層 Admin
+
+| 角色 | 驗證方式 | 權限 |
+|------|----------|------|
+| **Super Admin** | `.env` 帳密 | 管理所有 App 設定、所有使用者權限、指定 App Admin、查看完整 Audit Log |
+| **App Admin** | 員工帳密 + app_admins 表 | 管理自己負責 App 的使用者權限、查看相關 Audit Log |
+
+### 登入流程
+
+訪問 `/admin/login`，輸入帳號密碼：
+1. 若為 `.env` 中的 Super Admin → 簽發 `super_admin` JWT（2 小時）
+2. 否則嘗試員工帳密認證 → 查 `app_admins` 表確認是否為 App Admin → 簽發 `app_admin` JWT（2 小時）
+
+### 管理頁面
+
+| 頁面 | 路徑 | Super Admin | App Admin |
+|------|------|:-----------:|:---------:|
+| Dashboard | `/admin/dashboard` | 全部 App 總覽 | 自己的 App |
+| App 管理 | `/admin/apps` | CRUD apps.yaml | 無法存取 |
+| 權限管理 | `/admin/permissions` | 所有 App | 僅自己的 App |
+| Admin 管理 | `/admin/admins` | 指定/移除 App Admin | 無法存取 |
+| 操作紀錄 | `/admin/audit-log` | 全部 | 僅相關紀錄 |
+
+## Per-User-Per-App 權限管理
+
+### 權限檢查邏輯
+
+```
+登入 / Token 交換時：
+  1. 查 user_app_permissions 表 → 有個人權限？
+     ├─ YES → 使用個人 scopes（覆蓋 level-based mapping）
+     └─ NO  → fallback 到 apps.yaml 規則：
+              ├─ allowed_depts 檢查
+              ├─ min_level 檢查
+              └─ scopes = map_scopes(staff.level)
+```
+
+### 權限管理介面
+
+路徑：`/admin/permissions`（需 Admin 登入）
+
+- **搜尋**：依使用者名稱或 App ID 篩選
+- **權限列表**：顯示個人授權記錄（App Admin 只看到自己的 App）
+- **新增授權**：選擇使用者 + App + scopes（read / write / admin）
+- **撤銷**：移除特定使用者對特定 App 的個人權限（會 fallback 回部門/等級規則）
+
+### 使用者 Dashboard
+
+路徑：`/auth/dashboard`（需 JWT Cookie）
+
+- 顯示使用者資訊（姓名、部門、等級）
+- 列出有權限存取的 App（合併個人權限 + 部門/等級 fallback）
+- 標示權限來源（「個人授權」/「部門/等級」）
+- 顯示各 App 的 scopes
+
 ## 管理員 CLI 工具
 
 ### 產生註冊連結
@@ -790,6 +903,32 @@ python scripts/reset_password.py kane.beh
 python scripts/reset_password.py kane.beh --password NewPass123
 ```
 
+### 管理使用者 App 權限
+
+為特定使用者授予 / 撤銷 / 查詢 App 權限：
+
+```bash
+# 授權：kane.beh 對 ai_chat_app 擁有 read + write
+python scripts/manage_permissions.py grant kane.beh ai_chat_app --scopes read,write
+
+# 授權（指定授權者）
+python scripts/manage_permissions.py grant kane.beh ai_chat_app --scopes read,write --granted-by admin
+
+# 撤銷
+python scripts/manage_permissions.py revoke kane.beh ai_chat_app
+
+# 列出所有個人權限
+python scripts/manage_permissions.py list
+
+# 列出特定使用者的權限
+python scripts/manage_permissions.py list --user kane.beh
+
+# 列出特定 App 的所有授權使用者
+python scripts/manage_permissions.py list --app ai_chat_app
+```
+
+有效 scopes：`read`、`write`、`admin`
+
 ## 安全機制
 
 | 機制 | 說明 |
@@ -797,8 +936,19 @@ python scripts/reset_password.py kane.beh --password NewPass123
 | **Rate Limiting** | 同一 IP 5 分鐘內最多 10 次登入/忘記密碼嘗試 |
 | **Redirect URI 驗證** | GET 和 POST 均嚴格比對 `apps.yaml` 中的設定，防止 Open Redirect |
 | **註冊頁面保護** | 所有註冊相關頁面均需有效 token 才能存取 |
-| **身份驗證** | 首次註冊需核對分機號碼與部門代碼（比對 MySQL） |
+| **身份驗證** | 首次註冊需核對分機號碼與部門代碼（比對 MySQL），含長度驗證 |
+| **防使用者列舉** | 登入失敗一律回傳「使用者名稱或密碼錯誤」，不區分帳號不存在或密碼錯誤 |
+| **防時序攻擊** | 未知用戶仍執行 dummy bcrypt.verify 確保恆定回應時間 |
+| **Auth Code 原子消耗** | 使用 `DELETE ... RETURNING` 原子操作，防止並行請求重複消耗同一 code |
+| **註冊 Race Condition 防護** | 以 IntegrityError 捕獲處理，避免並行請求建立重複帳號 |
 | **bcrypt 密碼雜湊** | 密碼使用 bcrypt 單向雜湊儲存 |
 | **Authorization Code** | 一次性、5 分鐘過期、SQLite 儲存（支援多 worker） |
 | **HttpOnly Cookie** | JWT 存於 HttpOnly Cookie，JS 無法存取 |
 | **RS256 非對稱簽名** | 私鑰僅 Auth Center 持有，App 端只需公鑰驗證 |
+| **DB 索引** | `auth_codes` 和 `registration_tokens` 的 `expires_at` 加了索引，加速過期清理 |
+| **背景清理** | 過期 token 由背景定時任務（每小時）統一清理，而非每次操作時清理 |
+| **結構化 Logging** | 所有認證事件（登入成敗、註冊、token 操作、存取拒絕）均有 log 記錄 |
+| **Admin 短效 JWT** | Admin JWT 僅 2 小時有效（一般 JWT 為 12 小時），獨立 cookie |
+| **Admin 常數時間比對** | Super Admin 帳密使用 `hmac.compare_digest` 防止時序攻擊 |
+| **Admin Audit Log** | 所有 admin 操作均記錄到 SQLite（操作者、動作、對象、IP、時間） |
+| **App Admin 隔離** | App Admin 只能管理自己被指定的 App，無法存取其他 App 或系統設定 |
