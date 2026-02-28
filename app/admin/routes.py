@@ -136,6 +136,7 @@ def _base_ctx(request: Request, admin: dict, active_nav: str, **kwargs) -> dict:
 
 @router.get("/login", response_class=HTMLResponse)
 async def admin_login_page(request: Request):
+    """渲染管理員登入頁面。"""
     templates = _get_templates()
     return templates.TemplateResponse("admin_login.html", {"request": request, "error": None})
 
@@ -148,6 +149,14 @@ async def admin_login_submit(
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
     mysql_session: AsyncSession = Depends(get_mysql_session),
 ):
+    """處理管理員登入。
+
+    驗證流程：
+    1. 先比對 .env 中的 Super Admin 帳密（hmac.compare_digest 常數時間比對）
+    2. 若非 Super Admin，嘗試員工帳密認證
+    3. 認證成功後查 app_admins 表確認是否為 App Admin
+    4. 簽發 admin JWT（2 小時有效），存入 admin_token cookie
+    """
     templates = _get_templates()
     settings = get_settings()
     username = username.strip()
@@ -213,6 +222,7 @@ async def admin_login_submit(
 
 @router.get("/logout")
 async def admin_logout():
+    """管理員登出，清除 admin_token cookie 並重導至登入頁。"""
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
@@ -228,6 +238,11 @@ async def admin_dashboard(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
+    """管理後台總覽頁。
+
+    顯示已註冊 App 數量、個人權限記錄數、App Admin 數量等統計資訊。
+    Super Admin 看到所有 App，App Admin 只看到自己管理的 App。
+    """
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
@@ -262,6 +277,10 @@ async def apps_page(
     request: Request,
     admin_token: str | None = Cookie(default=None),
 ):
+    """App 管理頁面（僅 Super Admin）。
+
+    列出所有已註冊的 App，可編輯 allowed_depts / min_level、新增或刪除 App。
+    """
     admin = _verify_admin_cookie(admin_token)
     if not _require_super(admin):
         return RedirectResponse("/admin/login", status_code=303)
@@ -281,6 +300,11 @@ async def update_app(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
+    """更新 App 的存取規則（僅 Super Admin）。
+
+    可修改 allowed_depts（逗號分隔的部門代碼）和 min_level（1-3）。
+    變更會寫回 config/apps.yaml 並記錄至 audit log。
+    """
     admin = _verify_admin_cookie(admin_token)
     if not _require_super(admin):
         return RedirectResponse("/admin/login", status_code=303)
@@ -323,6 +347,11 @@ async def create_app(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
+    """新增 App 到 apps.yaml（僅 Super Admin）。
+
+    自動產生隨機 client_secret 並以 bcrypt 雜湊儲存。
+    新增成功後顯示明文 secret 一次（此後無法再次查看）。
+    """
     admin = _verify_admin_cookie(admin_token)
     if not _require_super(admin):
         return RedirectResponse("/admin/login", status_code=303)
@@ -373,6 +402,10 @@ async def delete_app(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
+    """從 apps.yaml 中刪除 App（僅 Super Admin）。
+
+    刪除後該 App 的 OAuth flow 將無法使用。已存在的 per-user 權限不會自動刪除。
+    """
     admin = _verify_admin_cookie(admin_token)
     if not _require_super(admin):
         return RedirectResponse("/admin/login", status_code=303)
@@ -412,6 +445,12 @@ async def permissions_page(
     user_filter: str = Query(default=""),
     app_filter: str = Query(default=""),
 ):
+    """權限管理頁面。
+
+    顯示使用者的 per-app 個人權限列表，支援依使用者名稱及 App ID 篩選。
+    - Super Admin：可查看所有 app 的權限。
+    - App Admin：僅顯示自己管理的 app 的權限，下拉選單也僅列出管理的 app。
+    """
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
@@ -456,6 +495,12 @@ async def grant_permission(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
+    """授予使用者對指定 App 的個人權限。
+
+    接收 employee_name、app_id、scopes（checkbox 多選），驗證 App 存在後寫入資料庫。
+    App Admin 僅能授權自己管理的 app，若嘗試授權非管理的 app 會被重導回權限頁面。
+    操作完成後記錄 audit log。
+    """
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
@@ -501,6 +546,10 @@ async def revoke_permission(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
+    """撤銷使用者對指定 App 的個人權限。
+
+    App Admin 僅能撤銷自己管理的 app 的權限。成功撤銷後記錄 audit log。
+    """
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
@@ -534,6 +583,11 @@ async def admins_page(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
+    """App Admin 管理頁面（僅 Super Admin）。
+
+    列出所有已指定的 App Admin（員工名稱、負責的 app、指定者、指定時間），
+    並提供指定新 App Admin 的表單。
+    """
     admin = _verify_admin_cookie(admin_token)
     if not _require_super(admin):
         return RedirectResponse("/admin/login", status_code=303)
@@ -553,6 +607,11 @@ async def assign_app_admin(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
+    """指定員工為某 App 的 App Admin（僅 Super Admin）。
+
+    將 employee_name + app_id 寫入 app_admins 表。若已存在則更新 assigned_by 與時間。
+    操作完成後記錄 audit log。
+    """
     admin = _verify_admin_cookie(admin_token)
     if not _require_super(admin):
         return RedirectResponse("/admin/login", status_code=303)
@@ -594,6 +653,11 @@ async def remove_app_admin(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
+    """移除某員工的 App Admin 身份（僅 Super Admin）。
+
+    從 app_admins 表刪除對應記錄，該員工將無法再以 App Admin 身份登入管理該 app。
+    操作完成後記錄 audit log。
+    """
     admin = _verify_admin_cookie(admin_token)
     if not _require_super(admin):
         return RedirectResponse("/admin/login", status_code=303)
@@ -626,6 +690,11 @@ async def audit_log_page(
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
     page: int = Query(default=1, ge=1),
 ):
+    """操作紀錄頁面，顯示所有管理員操作的 audit log，支援分頁（每頁 50 筆）。
+
+    - Super Admin：查看所有操作紀錄。
+    - App Admin：僅顯示與自己或自己管理的 app 相關的紀錄。
+    """
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
