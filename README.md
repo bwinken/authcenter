@@ -645,29 +645,23 @@ sequenceDiagram
 
     Note over A: 需要實作 3 個部分
 
-    rect rgb(240, 245, 255)
     Note over U,A: Part 1：未登入 → 重導至 Auth Center
     U->>A: GET /dashboard（無 Cookie）
     A-->>U: 302 → Auth Center /auth/login?app_id=X&redirect_uri=Y
-    end
 
     U->>C: 使用者在 Auth Center 完成登入
 
-    rect rgb(240, 255, 240)
     Note over U,A: Part 2：接收 Code → 換取 Token
     C-->>U: 302 → {redirect_uri}?code=abc123
     U->>A: GET /auth/callback?code=abc123
     A->>C: POST /auth/token（server-to-server）
     C-->>A: JWT Token
     A-->>U: Set-Cookie: access_token（HttpOnly）
-    end
 
-    rect rgb(255, 245, 240)
     Note over U,A: Part 3：每次請求用 public.pem 驗 JWT
     U->>A: GET /dashboard（Cookie 自動帶上）
     A->>A: jwt.decode（本地驗證，不呼叫 Auth Center）
     A-->>U: 回傳頁面內容
-    end
 ```
 
 ### Part 1：導流 — 未登入時重導至 Auth Center
