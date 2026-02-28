@@ -1,11 +1,14 @@
 """Auth Center API routes."""
 
+import logging
 from urllib.parse import urlencode
 
+import jwt
 from fastapi import APIRouter, Cookie, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from passlib.hash import bcrypt
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import load_registered_apps, get_settings
@@ -15,8 +18,10 @@ from app.auth.jwt_handler import create_token, verify_token
 from app.schemas import TokenRequest, ForgotPasswordRequest
 from app.webhook.teams import send_forgot_password_notification, send_registration_request_notification
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/auth", tags=["auth"])
-templates = Templates = None  # initialized in main.py via init_templates()
+templates: Jinja2Templates | None = None
 
 
 def init_templates(t: Jinja2Templates) -> None:
@@ -134,8 +139,8 @@ async def login_submit(
     if error:
         return _error_response(error)
 
-    # Check app access permission
-    allowed, reason = service.check_app_access(staff, app_info)
+    # Check app access permission (per-user > dept/level fallback)
+    allowed, reason, _scopes = await service.check_app_access(sqlite_session, staff, app_info)
     if not allowed:
         return _error_response(reason)
 
@@ -190,9 +195,11 @@ async def register_request_submit(
 
     驗證流程：
     1. 驗證 registration token 有效
-    2. 查 MySQL 取得員工資料
-    3. 核對分機號碼與部門代碼是否匹配
-    4. 核對正確 → 發送 Teams Webhook 通知管理員
+    2. 驗證輸入格式
+    3. 查 MySQL 取得員工資料
+    4. 核對分機號碼與部門代碼是否匹配
+    5. 核對正確 → 發送 Teams Webhook 通知管理員
+    6. Webhook 成功後才作廢 token
     """
     employee_name = service.normalize_employee_name(employee_name)
 
@@ -214,6 +221,16 @@ async def register_request_submit(
         "success": False,
     }
 
+    # Validate input format and length (#9)
+    ext = ext.strip()
+    dept_code = dept_code.strip()
+    if not ext or len(ext) > 20:
+        ctx["error"] = "分機號碼格式無效。"
+        return templates.TemplateResponse("register_request.html", ctx)
+    if not dept_code or len(dept_code) > 20:
+        ctx["error"] = "部門代碼格式無效。"
+        return templates.TemplateResponse("register_request.html", ctx)
+
     # Verify staff info from MySQL
     staff = await service.verify_staff(mysql_session, employee_name)
     if staff is None:
@@ -221,11 +238,11 @@ async def register_request_submit(
         return templates.TemplateResponse("register_request.html", ctx)
 
     # Verify ext and dept_code match
-    if staff.ext != ext.strip():
+    if staff.ext != ext:
         ctx["error"] = "分機號碼不正確。"
         return templates.TemplateResponse("register_request.html", ctx)
 
-    if staff.dept_code != dept_code.strip():
+    if staff.dept_code != dept_code:
         ctx["error"] = "部門代碼不正確。"
         return templates.TemplateResponse("register_request.html", ctx)
 
@@ -241,7 +258,7 @@ async def register_request_submit(
         ctx["error"] = "通知發送失敗，請聯繫 IT 部門。"
         return templates.TemplateResponse("register_request.html", ctx)
 
-    # Invalidate the token after successful submission
+    # Only invalidate AFTER webhook succeeds (#6)
     await service.invalidate_registration_token(sqlite_session, token)
 
     ctx["success"] = True
@@ -296,9 +313,8 @@ async def register_submit(
     1. 驗證 registration token 有效
     2. 確認兩次密碼輸入一致且長度 >= 8
     3. 查 MySQL 確認使用者名稱存在
-    4. 查 SQLite 確認帳號尚未註冊
-    5. 建立帳號（bcrypt 雜湊密碼）
-    6. 導回登入頁繼續 OAuth 流程
+    4. 建立帳號（用 try/except 處理並行 race condition）
+    5. 導回登入頁繼續 OAuth 流程
     """
     employee_name = service.normalize_employee_name(employee_name)
 
@@ -339,14 +355,12 @@ async def register_submit(
         ctx["error"] = "使用者名稱不存在。"
         return templates.TemplateResponse("register.html", ctx)
 
-    # Check if already registered
-    exists = await service.check_account_exists(sqlite_session, employee_name)
-    if exists:
+    # Create account — use try/except to handle race condition (#5)
+    try:
+        await service.register_account(sqlite_session, employee_name, password)
+    except IntegrityError:
         ctx["error"] = "此帳號已經註冊過了。"
         return templates.TemplateResponse("register.html", ctx)
-
-    # Create account
-    await service.register_account(sqlite_session, employee_name, password)
 
     # Invalidate the registration token
     await service.invalidate_registration_token(sqlite_session, token)
@@ -396,7 +410,9 @@ async def exchange_token(
     if staff is None:
         return JSONResponse({"error": "staff_not_found"}, status_code=400)
 
-    scopes = service.map_scopes(staff.level)
+    # Resolve scopes: per-user permission > level-based fallback
+    perm = await service.get_user_app_permission(sqlite_session, employee_name, body.app_id)
+    scopes = perm["scopes"] if perm else service.map_scopes(staff.level)
     token = create_token(
         sub=staff.employee_name,
         name=staff.name,
@@ -504,8 +520,54 @@ def _verify_cookie(access_token: str | None) -> dict | None:
     try:
         settings = get_settings()
         return verify_token(access_token, settings.public_key)
+    except jwt.PyJWTError:
+        return None  # Expected: invalid or expired token
     except Exception:
+        logger.exception("Unexpected error verifying JWT cookie")
         return None
+
+
+# ─── User Dashboard ──────────────────────────────────────────
+
+@router.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page(
+    request: Request,
+    access_token: str | None = Cookie(default=None),
+    mysql_session: AsyncSession = Depends(get_mysql_session),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """使用者 Dashboard：顯示有權限存取的 App 列表。
+
+    需要有效的 JWT Cookie 登入。列出使用者所有可存取的 App，
+    包含個人授權和部門/等級 fallback 兩種來源。
+    """
+    user = _verify_cookie(access_token)
+    if user is None:
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "error": "請先登入後再查看 Dashboard。",
+            "staff": None,
+            "apps": [],
+        })
+
+    staff = await service.verify_staff(mysql_session, user["sub"])
+    if staff is None:
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "error": "員工資料不存在。",
+            "staff": None,
+            "apps": [],
+        })
+
+    all_apps = load_registered_apps()
+    accessible = await service.get_user_accessible_apps(sqlite_session, staff, all_apps)
+
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "error": None,
+        "staff": staff,
+        "apps": accessible,
+    })
 
 
 # ─── Forgot Password ─────────────────────────────────────────

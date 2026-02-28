@@ -8,12 +8,13 @@ If --password is not provided, a random 12-character password will be generated.
 """
 
 import argparse
+import asyncio
 import secrets
 import string
-import sqlite3
 import sys
 from pathlib import Path
 
+import aiosqlite
 from passlib.hash import bcrypt
 from dotenv import load_dotenv
 import os
@@ -29,35 +30,34 @@ def generate_random_password(length: int = 12) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-def reset_password(employee_name: str, new_password: str | None, db_path: str) -> None:
+async def reset_password(employee_name: str, new_password: str | None, db_path: str) -> None:
     employee_name = employee_name.lower().strip()
 
     if not Path(db_path).exists():
         print(f"[ERROR] Database not found: {db_path}")
         sys.exit(1)
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    async with aiosqlite.connect(db_path) as db:
+        # Check if account exists
+        cursor = await db.execute(
+            "SELECT employee_name FROM user_accounts WHERE employee_name = ?",
+            (employee_name,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            print(f"[ERROR] Account not found: {employee_name}")
+            print("This employee has not registered yet. No password to reset.")
+            sys.exit(1)
 
-    # Check if account exists
-    cursor.execute("SELECT employee_name FROM user_accounts WHERE employee_name = ?", (employee_name,))
-    row = cursor.fetchone()
-    if row is None:
-        print(f"[ERROR] Account not found: {employee_name}")
-        print("This employee has not registered yet. No password to reset.")
-        conn.close()
-        sys.exit(1)
+        # Generate or use provided password
+        password = new_password or generate_random_password()
+        password_hash = bcrypt.hash(password)
 
-    # Generate or use provided password
-    password = new_password or generate_random_password()
-    password_hash = bcrypt.hash(password)
-
-    cursor.execute(
-        "UPDATE user_accounts SET password_hash = ?, updated_at = datetime('now') WHERE employee_name = ?",
-        (password_hash, employee_name),
-    )
-    conn.commit()
-    conn.close()
+        await db.execute(
+            "UPDATE user_accounts SET password_hash = ?, updated_at = datetime('now') WHERE employee_name = ?",
+            (password_hash, employee_name),
+        )
+        await db.commit()
 
     print(f"[OK] Password reset for {employee_name}")
     print(f"     New password: {password}")
@@ -77,7 +77,7 @@ def main():
         print("[ERROR] Password must be at least 8 characters.")
         sys.exit(1)
 
-    reset_password(args.employee_name, args.password, args.db)
+    asyncio.run(reset_password(args.employee_name, args.password, args.db))
 
 
 if __name__ == "__main__":

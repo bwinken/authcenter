@@ -9,12 +9,13 @@ Admin should send this link to the employee's email.
 """
 
 import argparse
+import asyncio
 import secrets
-import sqlite3
 import sys
 import time
 from pathlib import Path
 
+import aiosqlite
 from dotenv import load_dotenv
 import os
 
@@ -26,7 +27,7 @@ BASE_URL = os.getenv("AUTH_CENTER_BASE_URL", "http://localhost:8000")
 TOKEN_TTL = 86400  # 24 hours
 
 
-def generate_register_link(
+async def generate_register_link(
     employee_name: str, app_id: str, redirect_uri: str, db_path: str
 ) -> None:
     employee_name = employee_name.lower().strip()
@@ -35,30 +36,27 @@ def generate_register_link(
         print(f"[ERROR] Database not found: {db_path}")
         sys.exit(1)
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    async with aiosqlite.connect(db_path) as db:
+        # Check if already registered
+        cursor = await db.execute(
+            "SELECT employee_name FROM user_accounts WHERE employee_name = ?",
+            (employee_name,),
+        )
+        if await cursor.fetchone():
+            print(f"[WARNING] {employee_name} already has an account.")
+            print("If they need a password reset, use: python scripts/reset_password.py")
+            sys.exit(1)
 
-    # Check if already registered
-    cursor.execute(
-        "SELECT employee_name FROM user_accounts WHERE employee_name = ?", (employee_name,)
-    )
-    if cursor.fetchone():
-        print(f"[WARNING] {employee_name} already has an account.")
-        print("If they need a password reset, use: python scripts/reset_password.py")
-        conn.close()
-        sys.exit(1)
+        # Generate token and store in SQLite
+        token = secrets.token_urlsafe(48)
+        expires_at = time.time() + TOKEN_TTL
 
-    # Generate token and store in SQLite
-    token = secrets.token_urlsafe(48)
-    expires_at = time.time() + TOKEN_TTL
-
-    cursor.execute(
-        "INSERT OR REPLACE INTO registration_tokens (token, employee_name, app_id, redirect_uri, expires_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (token, employee_name, app_id, redirect_uri, expires_at),
-    )
-    conn.commit()
-    conn.close()
+        await db.execute(
+            "INSERT OR REPLACE INTO registration_tokens (token, employee_name, app_id, redirect_uri, expires_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (token, employee_name, app_id, redirect_uri, expires_at),
+        )
+        await db.commit()
 
     link = f"{BASE_URL}/auth/register?token={token}"
 
@@ -86,7 +84,7 @@ def main():
     )
     args = parser.parse_args()
 
-    generate_register_link(args.employee_name, args.app_id, args.redirect_uri, args.db)
+    asyncio.run(generate_register_link(args.employee_name, args.app_id, args.redirect_uri, args.db))
 
 
 if __name__ == "__main__":
