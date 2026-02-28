@@ -614,7 +614,17 @@ cp /path/to/auth-center/keys/public.pem /path/to/my-app/keys/public.pem
 
 ## 8. AI App 端整合指南
 
-完整範例請參考 `middleware_example/app_middleware.py`。
+完整可運行範例請參考 `example_app/main.py`，包含：
+
+- `/docs` Swagger Authorize 支援（輸入帳密自動取得 Token）
+- 瀏覽器 Cookie 認證（OAuth2 redirect flow）
+- Bearer + Cookie 雙模式 JWT 驗證
+- `require_scopes` 權限檢查
+
+```bash
+# 啟動範例 App（確保 Auth Center 已在 :8000 運行）
+fastapi dev example_app/main.py --port 8001
+```
 
 ### 前置準備
 
@@ -1123,8 +1133,8 @@ auth-center/
 │   ├── reset_password.py          # CLI：重設使用者密碼
 │   ├── generate_register_link.py  # CLI：產生註冊連結
 │   └── manage_permissions.py      # CLI：管理使用者 App 權限
-├── middleware_example/
-│   └── app_middleware.py    # App 端驗證範例
+├── example_app/
+│   └── main.py              # AI App 整合範例（完整可運行）
 ├── generate_keys.py         # 金鑰產生腳本
 ├── requirements.txt
 └── .env.example
