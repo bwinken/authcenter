@@ -25,6 +25,7 @@ AI App 整合 Auth Center 完整範例
 """
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from functools import lru_cache
 from typing import Annotated
@@ -33,7 +34,7 @@ from urllib.parse import urlparse, parse_qs
 import httpx
 import jwt
 from dotenv import load_dotenv
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, status
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
@@ -51,6 +52,9 @@ REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8001/auth/callback")
 PUBLIC_KEY_PATH = os.getenv("PUBLIC_KEY_PATH", "./keys/public.pem")
 
 ALGORITHM = "RS256"
+TOKEN_MAX_AGE = 12 * 60 * 60  # 12 小時（與 Auth Center JWT 過期時間一致）
+
+LOGIN_URL = f"{AUTH_CENTER_URL}/auth/login?app_id={APP_ID}&redirect_uri={REDIRECT_URI}"
 
 
 @lru_cache
@@ -60,13 +64,21 @@ def _load_public_key() -> str:
 
 
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  FastAPI App                                                ║
+# ║  FastAPI App（含 httpx 連線池生命週期管理）                   ║
 # ╚══════════════════════════════════════════════════════════════╝
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.http_client = httpx.AsyncClient(timeout=10.0)
+    yield
+    await app.state.http_client.aclose()
+
 
 app = FastAPI(
     title="AI Chat App（範例）",
     description="示範如何整合 Auth Center SSO",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 
@@ -88,7 +100,10 @@ class TokenResponse(BaseModel):
 
 
 @app.post("/token", response_model=TokenResponse, tags=["auth"])
-async def login_for_swagger(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
+async def login_for_swagger(
+    request: Request,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+):
     """供 Swagger /docs 使用的 Token 端點。
 
     在 /docs 右上角 Authorize 輸入 Auth Center 的帳密，
@@ -97,63 +112,58 @@ async def login_for_swagger(form_data: Annotated[OAuth2PasswordRequestForm, Depe
 
     注意：此端點僅建議在開發環境使用。正式環境應走瀏覽器 redirect flow。
     """
-    async with httpx.AsyncClient() as client:
-        # Step 1: 向 Auth Center 提交登入（模擬表單 POST）
-        login_resp = await client.post(
-            f"{AUTH_CENTER_URL}/auth/login",
-            data={
-                "employee_name": form_data.username,
-                "password": form_data.password,
-                "app_id": APP_ID,
-                "redirect_uri": REDIRECT_URI,
-            },
-            follow_redirects=False,  # 不自動跟隨 redirect，我們要取 code
+    client: httpx.AsyncClient = request.app.state.http_client
+
+    # Step 1: 向 Auth Center 提交登入（模擬表單 POST）
+    login_resp = await client.post(
+        f"{AUTH_CENTER_URL}/auth/login",
+        data={
+            "employee_name": form_data.username,
+            "password": form_data.password,
+            "app_id": APP_ID,
+            "redirect_uri": REDIRECT_URI,
+        },
+        follow_redirects=False,  # 不自動跟隨 redirect，我們要取 code
+    )
+
+    # Auth Center 登入成功會回 303，Location 帶 ?code=xxx
+    if login_resp.status_code not in (302, 303):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="帳號或密碼錯誤，或無權存取此 App。",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
-        # Auth Center 登入成功會回 303，Location 帶 ?code=xxx
-        if login_resp.status_code not in (302, 303):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="帳號或密碼錯誤，或無權存取此 App。",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    # 從 redirect URL 中取出 authorization code
+    location = login_resp.headers.get("location", "")
+    code = parse_qs(urlparse(location).query).get("code", [None])[0]
 
-        # 從 redirect URL 中取出 authorization code
-        location = login_resp.headers.get("location", "")
-        parsed = urlparse(location)
-        code = parse_qs(parsed.query).get("code", [None])[0]
-
-        if not code:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="登入失敗：未取得授權碼。可能是帳號未註冊或權限不足。",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        # Step 2: 用 code + client_secret 換取 JWT
-        token_resp = await client.post(
-            f"{AUTH_CENTER_URL}/auth/token",
-            json={
-                "code": code,
-                "app_id": APP_ID,
-                "client_secret": CLIENT_SECRET,
-            },
+    if not code:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="登入失敗：未取得授權碼。可能是帳號未註冊或權限不足。",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
-        if token_resp.status_code != 200:
-            error = token_resp.json().get("error", "unknown_error")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Token 交換失敗：{error}",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    # Step 2: 用 code + client_secret 換取 JWT
+    token_resp = await client.post(
+        f"{AUTH_CENTER_URL}/auth/token",
+        json={"code": code, "app_id": APP_ID, "client_secret": CLIENT_SECRET},
+    )
 
-        data = token_resp.json()
+    if token_resp.status_code != 200:
+        error = token_resp.json().get("error", "unknown_error")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token 交換失敗：{error}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
+    data = token_resp.json()
     return TokenResponse(
         access_token=data["access_token"],
         token_type="bearer",
-        expires_in=data.get("expires_in", 43200),
+        expires_in=data.get("expires_in", TOKEN_MAX_AGE),
     )
 
 
@@ -162,37 +172,28 @@ async def login_for_swagger(form_data: Annotated[OAuth2PasswordRequestForm, Depe
 # ╚══════════════════════════════════════════════════════════════╝
 
 @app.get("/auth/callback", tags=["auth"])
-async def auth_callback(code: str = Query(...)):
+async def auth_callback(request: Request, code: str = Query(...)):
     """OAuth2 callback — 接收 Auth Center 回傳的 code，換取 JWT 存入 Cookie。"""
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"{AUTH_CENTER_URL}/auth/token",
-            json={
-                "code": code,
-                "app_id": APP_ID,
-                "client_secret": CLIENT_SECRET,
-            },
-        )
+    client: httpx.AsyncClient = request.app.state.http_client
+    resp = await client.post(
+        f"{AUTH_CENTER_URL}/auth/token",
+        json={"code": code, "app_id": APP_ID, "client_secret": CLIENT_SECRET},
+    )
 
     if resp.status_code != 200:
         error = resp.json().get("error", "unknown")
         if error == "invalid_grant":
-            # Code 過期或已使用 → 重新登入
-            return RedirectResponse(
-                f"{AUTH_CENTER_URL}/auth/login?app_id={APP_ID}&redirect_uri={REDIRECT_URI}"
-            )
+            return RedirectResponse(LOGIN_URL)
         raise HTTPException(500, f"Token 交換失敗：{error}")
-
-    data = resp.json()
 
     response = RedirectResponse("/", status_code=303)
     response.set_cookie(
         key="access_token",
-        value=data["access_token"],
+        value=resp.json()["access_token"],
         httponly=True,
         secure=False,      # 本地開發用 HTTP，正式環境改 True
         samesite="lax",
-        max_age=43200,      # 12 小時
+        max_age=TOKEN_MAX_AGE,
     )
     return response
 
@@ -200,6 +201,14 @@ async def auth_callback(code: str = Query(...)):
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  JWT 驗證 — 同時支援 Bearer Token 和 Cookie                 ║
 # ╚══════════════════════════════════════════════════════════════╝
+
+def _decode_jwt(token: str) -> dict | None:
+    """解碼並驗證 JWT，失敗回傳 None。"""
+    try:
+        return jwt.decode(token, _load_public_key(), algorithms=[ALGORITHM], audience=APP_ID)
+    except jwt.PyJWTError:
+        return None
+
 
 def get_current_user(
     bearer_token: Annotated[str | None, Depends(oauth2_scheme)] = None,
@@ -279,17 +288,10 @@ async def home(
 ):
     """首頁 — 未登入導向 Auth Center，已登入顯示歡迎頁。"""
     token = bearer_token or access_token
-    if not token:
-        return RedirectResponse(
-            f"{AUTH_CENTER_URL}/auth/login?app_id={APP_ID}&redirect_uri={REDIRECT_URI}"
-        )
+    user = _decode_jwt(token) if token else None
 
-    try:
-        user = jwt.decode(token, _load_public_key(), algorithms=[ALGORITHM], audience=APP_ID)
-    except jwt.PyJWTError:
-        return RedirectResponse(
-            f"{AUTH_CENTER_URL}/auth/login?app_id={APP_ID}&redirect_uri={REDIRECT_URI}"
-        )
+    if user is None:
+        return RedirectResponse(LOGIN_URL)
 
     scopes = ", ".join(user.get("scopes", []))
     return f"""
