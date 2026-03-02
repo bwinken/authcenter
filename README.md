@@ -2,6 +2,8 @@
 
 中央認證系統，為多個內部 AI App 提供統一的單一登入 (SSO) 服務。
 
+> 📄 **[Auth Center SSO Guide (PDF)](docs/Auth_Center_SSO_Guide.pdf)** — 完整簡報，適合快速了解系統架構與流程
+
 ---
 
 ## 目錄
