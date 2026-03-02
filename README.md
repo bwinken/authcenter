@@ -413,7 +413,7 @@ sequenceDiagram
 | 步驟 | 操作 | 資料來源 | 失敗結果 |
 |------|------|----------|----------|
 | ① | 查詢員工是否在職 | MySQL `staff` 表 | 回傳「使用者名稱或密碼錯誤」（統一錯誤訊息防列舉） |
-| ② | 查詢帳號是否已註冊 | SQLite `user_accounts` 表 | 303 重導至身份驗證頁（開始註冊流程） |
+| ② | 查詢帳號是否已註冊 | SQLite `user_accounts` 表 | 顯示「尚未註冊」確認頁，使用者可選擇前往註冊或返回登入 |
 | ③ | bcrypt 比對密碼 | SQLite `user_accounts` 表 | 回傳「使用者名稱或密碼錯誤」 |
 | ④ | 檢查 App 存取權限 | `allowed_orgs` + `user_app_permissions` | 回傳「組織無權」或「無存取權限」(403) |
 | ⑤ | 產生 Authorization Code | SQLite `auth_codes` 表（5 分鐘 TTL） | — |
@@ -436,7 +436,10 @@ sequenceDiagram
     S-->>C: 帳號不存在 ✗
 
     C->>S: 產生 registration token（10 分鐘有效）
-    C-->>U: 303 重導至 /auth/register-request?token=xxx
+    C-->>U: 顯示「尚未註冊」確認頁
+
+    Note over U: 使用者點擊「前往註冊」按鈕
+    U->>C: GET /auth/register-request?token=xxx
 
     Note over U,C: 使用者填寫身份驗證資訊
     U->>C: POST /auth/register-request {extension, org_id, token}

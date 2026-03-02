@@ -132,9 +132,14 @@ async def login_submit(
     )
 
     if error == "needs_registration":
-        # Redirect to registration request page — user verifies identity, then webhook to admin
+        # Show confirmation page — user decides whether to register
         reg_token = await service.generate_registration_token(sqlite_session, employee_name, app_id, redirect_uri)
-        return RedirectResponse(f"/auth/register-request?token={reg_token}", status_code=303)
+        return templates.TemplateResponse("not_registered.html", {
+            "request": request,
+            "employee_name": employee_name,
+            "register_url": f"/auth/register-request?token={reg_token}",
+            "login_url": f"/auth/login?app_id={app_id}&redirect_uri={redirect_uri}",
+        })
 
     if error:
         return _error_response(error)

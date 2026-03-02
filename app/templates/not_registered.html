@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}尚未註冊 - AuthCenter{% endblock %}
+{% block content %}
+<div class="alert alert-info">
+    <strong>{{ employee_name }}</strong> 您好，您的身份已驗證，但尚未建立 AuthCenter 帳號。
+</div>
+
+<p class="subtitle">是否要前往註冊？註冊後即可登入使用。</p>
+
+<a href="{{ register_url }}" class="btn btn-primary" style="display:block; text-align:center; text-decoration:none; color:#fff;">前往註冊</a>
+<a href="{{ login_url }}" class="btn btn-secondary" style="display:block; text-align:center; text-decoration:none; margin-top:10px;">返回登入</a>
+{% endblock %}
