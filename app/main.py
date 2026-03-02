@@ -64,12 +64,24 @@ async def lifespan(app: FastAPI):
             CREATE TABLE IF NOT EXISTS user_app_permissions (
                 employee_name VARCHAR(50)  NOT NULL,
                 app_id        VARCHAR(100) NOT NULL,
-                scopes        TEXT         NOT NULL DEFAULT '["read"]',
+                level         INTEGER      NOT NULL DEFAULT 1,
                 granted_by    VARCHAR(50)  NOT NULL DEFAULT '',
                 granted_at    DATETIME     DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (employee_name, app_id)
             )
         """))
+        # Migration: if old schema had 'scopes' column, add 'level' and migrate data
+        cols_result = await conn.execute(text("PRAGMA table_info(user_app_permissions)"))
+        col_names = [row[1] for row in cols_result.fetchall()]
+        if "scopes" in col_names and "level" not in col_names:
+            await conn.execute(text("ALTER TABLE user_app_permissions ADD COLUMN level INTEGER NOT NULL DEFAULT 1"))
+            await conn.execute(text("""
+                UPDATE user_app_permissions SET level = CASE
+                    WHEN scopes LIKE '%admin%' THEN 3
+                    WHEN scopes LIKE '%write%' THEN 2
+                    ELSE 1
+                END
+            """))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS app_admins (
                 employee_name VARCHAR(50)  NOT NULL,

@@ -18,7 +18,7 @@ python generate_keys.py
 fastapi dev example_app/main.py --port 8001
 
 # CLI tools
-python scripts/manage_permissions.py grant <user> <app_id> --scopes read,write
+python scripts/manage_permissions.py grant <user> <app_id> --level 2
 python scripts/manage_permissions.py revoke <user> <app_id>
 python scripts/manage_permissions.py list [--user <user>] [--app <app_id>]
 python scripts/generate_register_link.py <employee_name>
@@ -31,19 +31,19 @@ No test suite exists yet.
 
 ### Dual Database Pattern
 
-MySQL (IT Master DB) is **read-only** — queries employee records (name, dept, level, ext) via raw SQL through `get_mysql_session`. SQLite (Auth Local DB) is **read-write** — stores accounts, auth codes, permissions, admin config via SQLAlchemy async ORM through `get_sqlite_session`. Tables are created in-code during `lifespan` startup (not via migrations).
+MySQL (IT Master DB) is **read-only** — queries employee records (`nt_account`, `org_id`, `extension`) via raw SQL through `get_mysql_session`. SQLite (Auth Local DB) is **read-write** — stores accounts, auth codes, permissions, admin config via SQLAlchemy async ORM through `get_sqlite_session`. Tables are created in-code during `lifespan` startup (not via migrations).
 
 ### App Registry
 
-Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` caches by file mtime and hot-reloads on change. `save_registered_apps()` writes back to YAML (used by admin CRUD). Each app has: `app_id`, bcrypt-hashed `client_secret`, `redirect_uri`, `name`, optional `allowed_depts`/`min_level`.
+Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` caches by file mtime and hot-reloads on change. `save_registered_apps()` writes back to YAML (used by admin CRUD). Each app has: `app_id`, bcrypt-hashed `client_secret`, `redirect_uri`, `name`, optional `allowed_orgs`.
 
 ### Authentication Flow
 
 `POST /auth/login` → verify staff (MySQL) → check account (SQLite) → bcrypt password → check app access rules → generate one-time auth code (5min TTL) → 303 redirect with `?code=xxx`. App backend then calls `POST /auth/token` with `code + client_secret` → gets RS256 JWT (12h).
 
-### Permission Resolution (in service.py)
+### Permission Model (Per-User-Per-App Level)
 
-Per-user permissions (`user_app_permissions` table) take priority. If none set, falls back to `apps.yaml` dept/level rules with automatic scope mapping: level 1→`[read]`, 2→`[read,write]`, 3→`[read,write,admin]`.
+Each user must have an explicit entry in `user_app_permissions` to access an app. No permission entry = access denied (403). The `level` integer maps to scopes automatically: 1→`[read]`, 2→`[read,write]`, 3→`[read,write,admin]`. Organization-based filtering via `allowed_orgs` in `apps.yaml` is checked separately.
 
 ### Two-Tier Admin
 

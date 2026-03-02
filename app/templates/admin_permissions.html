@@ -3,14 +3,24 @@
 
 {% block extra_style %}
 <style>
-    .scope-tag {
+    .level-tag {
         display: inline-block;
         font-size: 11px;
         padding: 2px 6px;
         border-radius: 3px;
-        background: #ecfdf5;
-        color: #166534;
         margin-right: 3px;
+    }
+    .level-1 { background: #ecfdf5; color: #166534; }
+    .level-2 { background: #dbeafe; color: #1d4ed8; }
+    .level-3 { background: #fef3c7; color: #92400e; }
+    .scope-tag {
+        display: inline-block;
+        font-size: 10px;
+        padding: 1px 4px;
+        border-radius: 3px;
+        background: #f3f4f6;
+        color: #6b7280;
+        margin-right: 2px;
     }
 </style>
 {% endblock %}
@@ -18,7 +28,7 @@
 {% block content %}
 <div class="page-header">
     <h1>權限管理</h1>
-    <p>管理使用者的 Per-App 個人權限{% if not is_super %}（僅顯示您管理的 App）{% endif %}</p>
+    <p>管理使用者的 Per-App 存取等級{% if not is_super %}（僅顯示您管理的 App）{% endif %}</p>
 </div>
 
 <!-- Search / Filter -->
@@ -42,6 +52,7 @@
             <tr>
                 <th>使用者</th>
                 <th>應用程式</th>
+                <th>Level</th>
                 <th>Scopes</th>
                 <th>授權者</th>
                 <th></th>
@@ -52,6 +63,7 @@
             <tr>
                 <td>{{ perm.employee_name }}</td>
                 <td>{{ apps.get(perm.app_id, {}).get('name', perm.app_id) }}</td>
+                <td><span class="level-tag level-{{ perm.level }}">Level {{ perm.level }}</span></td>
                 <td>
                     {% for s in perm.scopes %}
                     <span class="scope-tag">{{ s }}</span>
@@ -86,17 +98,13 @@
                 <option value="{{ aid }}">{{ ainfo.get('name', aid) }}</option>
                 {% endfor %}
             </select>
+            <select name="level" required>
+                {% for lv, label in valid_levels.items() %}
+                <option value="{{ lv }}">Level {{ lv }} — {{ label }}</option>
+                {% endfor %}
+            </select>
         </div>
-        <div class="checkbox-group" style="margin-bottom: 12px;">
-            <span style="color: var(--text-muted);">Scopes：</span>
-            {% for scope in valid_scopes %}
-            <label>
-                <input type="checkbox" name="scopes" value="{{ scope }}" {% if scope == 'read' %}checked{% endif %}>
-                {{ scope }}
-            </label>
-            {% endfor %}
-        </div>
-        <button type="submit" class="btn btn-primary">授權</button>
+        <button type="submit" class="btn btn-primary" style="margin-top: 8px;">授權</button>
     </form>
 </div>
 {% endblock %}

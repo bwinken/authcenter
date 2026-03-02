@@ -1,6 +1,5 @@
 """Core authentication business logic."""
 
-import json
 import logging
 import secrets
 import time
@@ -97,25 +96,36 @@ async def invalidate_registration_token(
     await sqlite_session.commit()
 
 
-SCOPE_MAP = {
+# ─── Level → Scopes Mapping ─────────────────────────────────
+
+LEVEL_SCOPE_MAP = {
     1: ["read"],
     2: ["read", "write"],
     3: ["read", "write", "admin"],
 }
 
 
+def level_to_scopes(level: int) -> list[str]:
+    """Convert per-app level to scope list."""
+    return LEVEL_SCOPE_MAP.get(level, ["read"])
+
+
 async def verify_staff(mysql_session: AsyncSession, employee_name: str) -> StaffInfo | None:
-    """Check IT Master DB (MySQL) to confirm staff exists. Returns StaffInfo or None."""
+    """Check IT Master DB (MySQL) to confirm staff exists. Returns StaffInfo or None.
+
+    Note: level is NOT from MySQL. It will be set to 0 as a placeholder.
+    The actual per-app level comes from user_app_permissions in SQLite.
+    """
     employee_name = normalize_employee_name(employee_name)
     result = await mysql_session.execute(
-        text("SELECT staff_id, name, dept_code, level, ext FROM staff WHERE staff_id = :ename"),
+        text("SELECT nt_account, org_id, extension FROM staff WHERE nt_account = :ename"),
         {"ename": employee_name},
     )
     row = result.fetchone()
     if row is None:
         return None
     return StaffInfo(
-        employee_name=row[0], name=row[1], dept_code=row[2], level=row[3], ext=row[4] or ""
+        employee_name=row[0], org_id=row[1], level=0, extension=row[2] or ""
     )
 
 
@@ -225,66 +235,27 @@ async def authenticate(
     return staff, ""
 
 
-def map_scopes(level: int) -> list[str]:
-    """Convert staff level to scope list."""
-    return SCOPE_MAP.get(level, ["read"])
-
-
-def _check_dept_level_access(staff: StaffInfo, app_info: dict) -> tuple[bool, str]:
-    """Check if staff passes department + level rules from apps.yaml.
+def _check_org_access(staff: StaffInfo, app_info: dict) -> tuple[bool, str]:
+    """Check if staff passes organization rules from apps.yaml.
 
     Returns (allowed, reason).
     """
-    allowed_depts = app_info.get("allowed_depts", []) or []
-    min_level = app_info.get("min_level", 1)
+    allowed_orgs = app_info.get("allowed_orgs", []) or []
 
-    if allowed_depts and staff.dept_code not in allowed_depts:
-        return False, f"您的部門 ({staff.dept_code}) 無權存取此應用程式。"
-
-    if staff.level < min_level:
-        return False, f"您的權限等級不足，此應用需要 Level {min_level} 以上。"
+    if allowed_orgs and staff.org_id not in allowed_orgs:
+        return False, f"您的組織 ({staff.org_id}) 無權存取此應用程式。"
 
     return True, ""
 
 
-async def check_app_access(
-    sqlite_session: AsyncSession, staff: StaffInfo, app_info: dict
-) -> tuple[bool, str, list[str]]:
-    """Check if staff has permission to access the given app.
-
-    Priority: per-user permission > dept/level fallback.
-    Returns (allowed, reason, scopes).
-    """
-    app_id = app_info.get("app_id", "")
-
-    # 1. Check per-user permission first
-    perm = await get_user_app_permission(sqlite_session, staff.employee_name, app_id)
-    if perm is not None:
-        logger.info("Per-user permission found: %s → %s scopes=%s", staff.employee_name, app_id, perm["scopes"])
-        return True, "", perm["scopes"]
-
-    # 2. Fallback to dept/level rules
-    allowed, reason = _check_dept_level_access(staff, app_info)
-    if not allowed:
-        logger.warning(
-            "App access denied: %s (dept=%s, level=%d) tried to access %s",
-            staff.employee_name, staff.dept_code, staff.level, app_id,
-        )
-        return False, reason, []
-
-    return True, "", map_scopes(staff.level)
-
-
-# ─── Per-User App Permissions ────────────────────────────────
-
-async def get_user_app_permission(
+async def get_user_app_level(
     sqlite_session: AsyncSession, employee_name: str, app_id: str
-) -> dict | None:
-    """Get per-user permission for a specific app. Returns dict with scopes or None."""
+) -> int | None:
+    """Get per-user level for a specific app. Returns level int or None if no permission."""
     employee_name = normalize_employee_name(employee_name)
     result = await sqlite_session.execute(
         text(
-            "SELECT scopes, granted_by, granted_at FROM user_app_permissions "
+            "SELECT level FROM user_app_permissions "
             "WHERE employee_name = :ename AND app_id = :aid"
         ),
         {"ename": employee_name, "aid": app_id},
@@ -292,79 +263,114 @@ async def get_user_app_permission(
     row = result.fetchone()
     if row is None:
         return None
-    return {
-        "scopes": json.loads(row[0]),
-        "granted_by": row[1],
-        "granted_at": row[2],
-    }
+    return row[0]
 
+
+async def check_app_access(
+    sqlite_session: AsyncSession, staff: StaffInfo, app_info: dict
+) -> tuple[bool, str, list[str]]:
+    """Check if staff has permission to access the given app.
+
+    Access requires:
+    1. Organization check (allowed_orgs in apps.yaml)
+    2. Explicit per-user permission in user_app_permissions (no permission = denied)
+
+    Returns (allowed, reason, scopes).
+    """
+    app_id = app_info.get("app_id", "")
+
+    # 1. Check organization access
+    allowed, reason = _check_org_access(staff, app_info)
+    if not allowed:
+        logger.warning(
+            "App access denied: %s (org=%s) tried to access %s — org not allowed",
+            staff.employee_name, staff.org_id, app_id,
+        )
+        return False, reason, []
+
+    # 2. Check per-user permission (required — no permission = denied)
+    level = await get_user_app_level(sqlite_session, staff.employee_name, app_id)
+    if level is None:
+        logger.warning(
+            "App access denied: %s has no permission for %s",
+            staff.employee_name, app_id,
+        )
+        return False, "您尚未被授權存取此應用程式，請聯繫管理員。", []
+
+    scopes = level_to_scopes(level)
+    logger.info("Per-user permission found: %s → %s level=%d scopes=%s", staff.employee_name, app_id, level, scopes)
+    return True, "", scopes
+
+
+# ─── Per-User App Permissions ────────────────────────────────
 
 async def get_user_accessible_apps(
     sqlite_session: AsyncSession,
     staff: StaffInfo,
     all_apps: dict[str, dict],
 ) -> list[dict]:
-    """Get all apps accessible by a user (personal permissions + dept/level fallback).
+    """Get all apps accessible by a user (based on per-user permissions + org check).
 
-    Returns list of dicts: [{app_id, name, scopes, source ("personal"/"dept_level"), redirect_uri}]
+    Returns list of dicts: [{app_id, name, level, scopes, redirect_uri}]
     """
     employee_name = normalize_employee_name(staff.employee_name)
 
     # Fetch all personal permissions
     result = await sqlite_session.execute(
-        text("SELECT app_id, scopes FROM user_app_permissions WHERE employee_name = :ename"),
+        text("SELECT app_id, level FROM user_app_permissions WHERE employee_name = :ename"),
         {"ename": employee_name},
     )
-    personal_perms = {row[0]: json.loads(row[1]) for row in result.fetchall()}
+    personal_perms = {row[0]: row[1] for row in result.fetchall()}
 
     accessible = []
     for app_id, app_info in all_apps.items():
-        entry = {
+        # Must have per-user permission
+        if app_id not in personal_perms:
+            continue
+
+        # Must pass org check
+        allowed, _ = _check_org_access(staff, app_info)
+        if not allowed:
+            continue
+
+        level = personal_perms[app_id]
+        accessible.append({
             "app_id": app_id,
             "name": app_info.get("name", app_id),
             "redirect_uri": app_info.get("redirect_uri", ""),
-        }
-
-        if app_id in personal_perms:
-            entry["scopes"] = personal_perms[app_id]
-            entry["source"] = "personal"
-            accessible.append(entry)
-        else:
-            allowed, _ = _check_dept_level_access(staff, app_info)
-            if allowed:
-                entry["scopes"] = map_scopes(staff.level)
-                entry["source"] = "dept_level"
-                accessible.append(entry)
+            "level": level,
+            "scopes": level_to_scopes(level),
+        })
 
     return accessible
 
 
-async def grant_permission(
+async def set_user_level(
     sqlite_session: AsyncSession,
     employee_name: str,
     app_id: str,
-    scopes: list[str],
+    level: int,
     granted_by: str = "",
 ) -> None:
-    """Grant or update per-user permission for an app."""
+    """Grant or update per-user level for an app."""
     employee_name = normalize_employee_name(employee_name)
-    scopes_json = json.dumps(scopes)
+    level = max(1, min(3, level))
     await sqlite_session.execute(
         text(
-            "INSERT INTO user_app_permissions (employee_name, app_id, scopes, granted_by) "
-            "VALUES (:ename, :aid, :scopes, :by) "
-            "ON CONFLICT(employee_name, app_id) DO UPDATE SET scopes = :scopes, granted_by = :by, granted_at = datetime('now')"
+            "INSERT INTO user_app_permissions (employee_name, app_id, level, granted_by) "
+            "VALUES (:ename, :aid, :level, :by) "
+            "ON CONFLICT(employee_name, app_id) DO UPDATE SET level = :level, granted_by = :by, granted_at = datetime('now')"
         ),
-        {"ename": employee_name, "aid": app_id, "scopes": scopes_json, "by": granted_by},
+        {"ename": employee_name, "aid": app_id, "level": level, "by": granted_by},
     )
     await sqlite_session.commit()
-    logger.info("Permission granted: %s → %s scopes=%s by=%s", employee_name, app_id, scopes, granted_by)
+    logger.info("Permission granted: %s → %s level=%d by=%s", employee_name, app_id, level, granted_by)
 
 
-async def revoke_permission(
+async def remove_user_permission(
     sqlite_session: AsyncSession, employee_name: str, app_id: str
 ) -> bool:
-    """Revoke per-user permission. Returns True if a record was deleted."""
+    """Remove per-user permission. Returns True if a record was deleted."""
     employee_name = normalize_employee_name(employee_name)
     result = await sqlite_session.execute(
         text("DELETE FROM user_app_permissions WHERE employee_name = :ename AND app_id = :aid"),
@@ -394,14 +400,15 @@ async def list_permissions(
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     result = await sqlite_session.execute(
-        text(f"SELECT employee_name, app_id, scopes, granted_by, granted_at FROM user_app_permissions {where} ORDER BY employee_name, app_id"),
+        text(f"SELECT employee_name, app_id, level, granted_by, granted_at FROM user_app_permissions {where} ORDER BY employee_name, app_id"),
         params,
     )
     return [
         {
             "employee_name": row[0],
             "app_id": row[1],
-            "scopes": json.loads(row[2]),
+            "level": row[2],
+            "scopes": level_to_scopes(row[2]),
             "granted_by": row[3],
             "granted_at": row[4],
         }

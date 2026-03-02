@@ -139,7 +139,7 @@ async def login_submit(
     if error:
         return _error_response(error)
 
-    # Check app access permission (per-user > dept/level fallback)
+    # Check app access permission (org check + per-user level required)
     allowed, reason, _scopes = await service.check_app_access(sqlite_session, staff, app_info)
     if not allowed:
         return _error_response(reason)
@@ -159,7 +159,7 @@ async def register_request_page(
 ):
     """渲染身份驗證頁面。
 
-    員工首次登入時導向此頁面，需填寫分機號碼與部門代碼以核對身份。
+    員工首次登入時導向此頁面，需填寫分機號碼與組織代碼以核對身份。
     核對正確後系統發送 Teams Webhook 通知管理員，管理員再產生註冊連結。
     """
     data = await service.consume_registration_token(sqlite_session, token)
@@ -185,8 +185,8 @@ async def register_request_page(
 async def register_request_submit(
     request: Request,
     employee_name: str = Form(...),
-    ext: str = Form(...),
-    dept_code: str = Form(...),
+    extension: str = Form(...),
+    org_id: str = Form(...),
     token: str = Form(...),
     mysql_session: AsyncSession = Depends(get_mysql_session),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
@@ -197,7 +197,7 @@ async def register_request_submit(
     1. 驗證 registration token 有效
     2. 驗證輸入格式
     3. 查 MySQL 取得員工資料
-    4. 核對分機號碼與部門代碼是否匹配
+    4. 核對分機號碼與組織代碼是否匹配
     5. 核對正確 → 發送 Teams Webhook 通知管理員
     6. Webhook 成功後才作廢 token
     """
@@ -221,14 +221,14 @@ async def register_request_submit(
         "success": False,
     }
 
-    # Validate input format and length (#9)
-    ext = ext.strip()
-    dept_code = dept_code.strip()
-    if not ext or len(ext) > 20:
+    # Validate input format and length
+    extension = extension.strip()
+    org_id = org_id.strip()
+    if not extension or len(extension) > 20:
         ctx["error"] = "分機號碼格式無效。"
         return templates.TemplateResponse("register_request.html", ctx)
-    if not dept_code or len(dept_code) > 20:
-        ctx["error"] = "部門代碼格式無效。"
+    if not org_id or len(org_id) > 20:
+        ctx["error"] = "組織代碼格式無效。"
         return templates.TemplateResponse("register_request.html", ctx)
 
     # Verify staff info from MySQL
@@ -237,13 +237,13 @@ async def register_request_submit(
         ctx["error"] = "使用者名稱不存在。"
         return templates.TemplateResponse("register_request.html", ctx)
 
-    # Verify ext and dept_code match
-    if staff.ext != ext:
+    # Verify extension and org_id match
+    if staff.extension != extension:
         ctx["error"] = "分機號碼不正確。"
         return templates.TemplateResponse("register_request.html", ctx)
 
-    if staff.dept_code != dept_code:
-        ctx["error"] = "部門代碼不正確。"
+    if staff.org_id != org_id:
+        ctx["error"] = "組織代碼不正確。"
         return templates.TemplateResponse("register_request.html", ctx)
 
     # Identity verified — send webhook to admin
@@ -410,13 +410,14 @@ async def exchange_token(
     if staff is None:
         return JSONResponse({"error": "staff_not_found"}, status_code=400)
 
-    # Resolve scopes: per-user permission > level-based fallback
-    perm = await service.get_user_app_permission(sqlite_session, employee_name, body.app_id)
-    scopes = perm["scopes"] if perm else service.map_scopes(staff.level)
+    # Resolve scopes from per-user level
+    level = await service.get_user_app_level(sqlite_session, employee_name, body.app_id)
+    if level is None:
+        return JSONResponse({"error": "no_permission"}, status_code=403)
+    scopes = service.level_to_scopes(level)
     token = create_token(
         sub=staff.employee_name,
-        name=staff.name,
-        dept=staff.dept_code,
+        org_id=staff.org_id,
         scopes=scopes,
         aud=body.app_id,
     )
@@ -538,8 +539,7 @@ async def dashboard_page(
 ):
     """使用者 Dashboard：顯示有權限存取的 App 列表。
 
-    需要有效的 JWT Cookie 登入。列出使用者所有可存取的 App，
-    包含個人授權和部門/等級 fallback 兩種來源。
+    需要有效的 JWT Cookie 登入。列出使用者所有已被授權的 App。
     """
     user = _verify_cookie(access_token)
     if user is None:

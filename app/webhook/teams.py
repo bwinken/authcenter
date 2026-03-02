@@ -55,9 +55,7 @@ async def send_forgot_password_notification(staff: StaffInfo) -> bool:
         subtitle="有員工請求重設密碼，請管理員協助處理。",
         facts=[
             {"title": "使用者名稱", "value": staff.employee_name},
-            {"title": "姓名", "value": staff.name},
-            {"title": "部門", "value": staff.dept_code},
-            {"title": "權限等級", "value": f"Level {staff.level}"},
+            {"title": "組織代碼", "value": staff.org_id},
         ],
     )
 
@@ -76,9 +74,7 @@ async def send_registration_request_notification(staff: StaffInfo, app_name: str
         ),
         facts=[
             {"title": "使用者名稱", "value": staff.employee_name},
-            {"title": "姓名", "value": staff.name},
-            {"title": "部門", "value": staff.dept_code},
-            {"title": "權限等級", "value": f"Level {staff.level}"},
+            {"title": "組織代碼", "value": staff.org_id},
             {"title": "欲存取的 App", "value": app_name},
             {"title": "產生連結指令", "value": f"python scripts/generate_register_link.py {staff.employee_name}"},
         ],

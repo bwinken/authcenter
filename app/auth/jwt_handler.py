@@ -12,8 +12,7 @@ TOKEN_EXPIRE_HOURS = 12
 
 def create_token(
     sub: str,
-    name: str,
-    dept: str,
+    org_id: str,
     scopes: list[str],
     aud: str,
     expire_hours: int | None = None,
@@ -24,8 +23,9 @@ def create_token(
     hours = expire_hours if expire_hours is not None else TOKEN_EXPIRE_HOURS
     payload = {
         "sub": sub,
-        "name": name,
-        "dept": dept,
+        "name": sub,         # backward compatible (display name = employee_name)
+        "dept": org_id,      # backward compatible
+        "org_id": org_id,
         "scopes": scopes,
         "aud": aud,
         "iat": now,

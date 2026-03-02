@@ -34,7 +34,6 @@ class ForgotPasswordRequest(BaseModel):
 
 class StaffInfo(BaseModel):
     employee_name: str
-    name: str
-    dept_code: str
+    org_id: str
     level: int
-    ext: str = ""
+    extension: str = ""

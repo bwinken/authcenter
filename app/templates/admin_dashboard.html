@@ -33,8 +33,7 @@
             <tr>
                 <th>App ID</th>
                 <th>名稱</th>
-                <th>允許部門</th>
-                <th>最低 Level</th>
+                <th>允許組織</th>
                 <th>Redirect URI</th>
             </tr>
         </thead>
@@ -44,14 +43,13 @@
                 <td><code style="font-size: 12px;">{{ aid }}</code></td>
                 <td>{{ info.get('name', aid) }}</td>
                 <td>
-                    {% set depts = info.get('allowed_depts', []) %}
-                    {% if depts %}
-                        {% for d in depts %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                    {% set orgs = info.get('allowed_orgs', []) %}
+                    {% if orgs %}
+                        {% for d in orgs %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
                     {% else %}
                         <span style="color: var(--text-muted); font-size: 12px;">全部</span>
                     {% endif %}
                 </td>
-                <td>{{ info.get('min_level', 1) }}</td>
                 <td style="font-size: 12px; color: var(--text-muted); max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ info.get('redirect_uri', '') }}</td>
             </tr>
         {% endfor %}
@@ -70,8 +68,7 @@
             <tr>
                 <th>App ID</th>
                 <th>名稱</th>
-                <th>允許部門</th>
-                <th>最低 Level</th>
+                <th>允許組織</th>
             </tr>
         </thead>
         <tbody>
@@ -81,14 +78,13 @@
                 <td><code style="font-size: 12px;">{{ aid }}</code></td>
                 <td>{{ info.get('name', aid) }}</td>
                 <td>
-                    {% set depts = info.get('allowed_depts', []) %}
-                    {% if depts %}
-                        {% for d in depts %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                    {% set orgs = info.get('allowed_orgs', []) %}
+                    {% if orgs %}
+                        {% for d in orgs %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
                     {% else %}
                         <span style="color: var(--text-muted); font-size: 12px;">全部</span>
                     {% endif %}
                 </td>
-                <td>{{ info.get('min_level', 1) }}</td>
             </tr>
         {% endfor %}
         </tbody>

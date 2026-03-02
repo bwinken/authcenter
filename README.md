@@ -229,8 +229,7 @@ Dashboard 顯示系統總覽資訊：
    - **App ID**：唯一識別碼（小寫英文 + 底線，如 `ai_chat_app`）
    - **名稱**：顯示名稱（如 `AI Chat Assistant`）
    - **Redirect URI**：App 的 callback URL（如 `http://localhost:8001/auth/callback`）
-   - **允許部門**：留空表示不限，多個部門用逗號分隔（如 `IT,RD`）
-   - **最低等級**：1 = 所有員工、2 = 主管級、3 = 管理級
+   - **允許組織**：留空表示不限，多個組織用逗號分隔（如 `IT,RD`）
 2. 點擊「新增」
 3. 系統會自動產生 `client_secret`，**此密碼只會顯示一次**，請立即複製保存
 4. 將 `client_secret` 交給 App 開發者，存放在 App 的 `.env` 中
@@ -238,7 +237,7 @@ Dashboard 顯示系統總覽資訊：
 **編輯 App 存取規則：**
 
 1. 在 App 列表中找到目標 App
-2. 修改「允許部門」或「最低等級」
+2. 修改「允許組織」
 3. 點擊「更新」
 
 **刪除 App：**
@@ -257,7 +256,7 @@ Dashboard 顯示系統總覽資訊：
 1. 在頁面底部的「新增授權」區塊：
    - 輸入**使用者名稱**（如 `kane.beh`）
    - 選擇**目標 App**
-   - 勾選**權限範圍** (Scopes)：`read`、`write`、`admin`
+   - 選擇**權限等級** (Level)：1 = Read、2 = Read + Write、3 = Full Admin
 2. 點擊「授權」
 
 **撤銷權限：**
@@ -265,7 +264,7 @@ Dashboard 顯示系統總覽資訊：
 1. 在權限列表中找到目標記錄
 2. 點擊「撤銷」
 
-> 撤銷個人權限後，該使用者會 fallback 回部門/等級規則。如果部門和等級仍符合 App 存取規則，使用者仍然可以登入。
+> 撤銷權限後，該使用者將無法存取該 App（必須有明確的 level 授權才能存取）。
 
 **搜尋 / 篩選：**
 
@@ -340,7 +339,7 @@ Dashboard 只會顯示你負責管理的 App 資訊（不會看到其他 App）�
 
 1. 輸入使用者名稱
 2. 選擇你管理的 App（下拉選單只會列出你負責的 App）
-3. 勾選權限範圍 (Scopes)
+3. 選擇權限等級 (Level)：1 = Read、2 = Read + Write、3 = Full Admin
 4. 點擊「授權」
 
 **撤銷權限：**
@@ -380,13 +379,13 @@ sequenceDiagram
 
     Note over C,S: 7. Auth Center 內部驗證（見下方）
     C->>M: ① 查詢員工是否在職
-    M-->>C: 回傳 name, dept_code, level
+    M-->>C: 回傳 org_id, extension
     C->>S: ② 查詢帳號是否已註冊
     S-->>C: 帳號存在
     C->>S: ③ 比對 bcrypt 密碼雜湊
     S-->>C: 密碼正確
-    C->>C: ④ 查詢 apps.yaml 存取規則
-    Note over C: 部門與等級皆符合
+    C->>S: ④ 查詢 user_app_permissions（per-app level）
+    S-->>C: level 存在
     C->>C: ⑤ 產生 Authorization Code（5 分鐘有效）
 
     C-->>U: 8. 302 重導 {redirect_uri}?code=abc123
@@ -396,7 +395,7 @@ sequenceDiagram
     C->>C: 驗證 client_secret + 消耗 code
     C->>M: 查詢員工資料以簽發 Token
     M-->>C: staff info
-    C->>C: 簽發 RS256 JWT（含 sub, name, dept, scopes, aud）
+    C->>C: 簽發 RS256 JWT（含 sub, org_id, scopes, aud）
     C-->>A: 11. 回傳 {access_token, token_type, expires_in}
 
     A->>A: 12. 將 JWT 存入 HttpOnly Cookie
@@ -416,7 +415,7 @@ sequenceDiagram
 | ① | 查詢員工是否在職 | MySQL `staff` 表 | 回傳「使用者名稱或密碼錯誤」（統一錯誤訊息防列舉） |
 | ② | 查詢帳號是否已註冊 | SQLite `user_accounts` 表 | 303 重導至身份驗證頁（開始註冊流程） |
 | ③ | bcrypt 比對密碼 | SQLite `user_accounts` 表 | 回傳「使用者名稱或密碼錯誤」 |
-| ④ | 檢查 App 存取規則 | `apps.yaml` 設定檔 | 回傳「部門無權」或「等級不足」 |
+| ④ | 檢查 App 存取權限 | `allowed_orgs` + `user_app_permissions` | 回傳「組織無權」或「無存取權限」(403) |
 | ⑤ | 產生 Authorization Code | SQLite `auth_codes` 表（5 分鐘 TTL） | — |
 
 ### 分支流程：首次登入（管理員審核註冊）
@@ -440,10 +439,10 @@ sequenceDiagram
     C-->>U: 303 重導至 /auth/register-request?token=xxx
 
     Note over U,C: 使用者填寫身份驗證資訊
-    U->>C: POST /auth/register-request {ext, dept_code, token}
-    C->>M: 查詢員工資料（含分機、部門）
+    U->>C: POST /auth/register-request {extension, org_id, token}
+    C->>M: 查詢員工資料（含分機、組織代碼）
     M-->>C: 回傳 staff info
-    C->>C: 核對分機號碼與部門代碼
+    C->>C: 核對分機號碼與組織代碼
     C->>T: 發送 Adaptive Card 通知
     T-->>C: 200 OK
     C-->>U: 「身份驗證通過，已通知管理員。」
@@ -500,9 +499,9 @@ sequenceDiagram
 
     U->>C: POST /auth/forgot-password {employee_name}
     C->>M: 查詢員工資料
-    M-->>C: 回傳 name, dept_code, level
+    M-->>C: 回傳 org_id, extension
     C->>T: POST Webhook（Adaptive Card）
-    Note over T: 通知內容：使用者名稱、姓名、部門、Level
+    Note over T: 通知內容：使用者名稱、組織代碼
     T-->>C: 200 OK
     C-->>U: 「已通知管理員，請等待處理。」
     Note over U: 不會自動重設密碼，需管理員手動處理
@@ -587,16 +586,14 @@ apps:
 ```yaml
   - app_id: "my_new_app"
     # ... client_secret, redirect_uri, name ...
-    allowed_depts: ["IT", "RD"]   # 只允許 IT 和 RD 部門，[] = 不限
-    min_level: 2                   # 最低 Level 2
+    allowed_orgs: ["IT", "RD"]   # 只允許 IT 和 RD 組織，[] = 不限
 ```
 
 | 欄位 | 說明 | 預設值 |
 |------|------|--------|
-| `allowed_depts` | 允許的部門代碼清單，空陣列 `[]` = 不限部門 | `[]` |
-| `min_level` | 最低員工等級要求（1/2/3） | `1` |
+| `allowed_orgs` | 允許的組織代碼清單，空陣列 `[]` = 不限組織 | `[]` |
 
-**如果不設定這兩個欄位**，該 App 預設允許所有員工登入。
+**注意**：使用者還必須在 `user_app_permissions` 表中有明確的 level 授權才能存取 App。`allowed_orgs` 是額外的組織過濾條件。
 
 ### Step 4：取得 Auth Center 公鑰
 
@@ -769,7 +766,7 @@ def get_current_user(access_token: str | None = Cookie(default=None)) -> dict:
 
 @app.get("/dashboard")
 async def dashboard(user: dict = Depends(get_current_user)):
-    return {"message": f"Hello {user['name']}", "scopes": user["scopes"]}
+    return {"message": f"Hello {user['sub']}", "scopes": user["scopes"]}
 
 
 # 需要特定 scope 的路由
@@ -783,13 +780,13 @@ def require_scopes(required: list[str]):
 
 @app.get("/admin")
 async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
-    return {"admin": True, "user": user["name"]}
+    return {"admin": True, "user": user["sub"]}
 ```
 
 ### Checklist：App 整合完成確認
 
 - [ ] `apps.yaml` 已新增 App 設定（app_id, client_secret hash, redirect_uri, name）
-- [ ] 已設定 `allowed_depts` 和 `min_level`（或確認不需限制）
+- [ ] 已設定 `allowed_orgs`（或確認不需限制）
 - [ ] App 專案中有 `public.pem`
 - [ ] App `.env` 中設定了 `AUTH_CENTER_URL`、`APP_ID`、`CLIENT_SECRET`、`REDIRECT_URI`
 - [ ] 實作了未登入時的 302 重導邏輯
@@ -807,10 +804,9 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 
 路徑：`/auth/dashboard`（需 JWT Cookie）
 
-- 顯示使用者資訊（姓名、部門、等級）
-- 列出有權限存取的 App（合併個人權限 + 部門/等級 fallback）
-- 標示權限來源（「個人授權」/「部門/等級」）
-- 顯示各 App 的 scopes
+- 顯示使用者資訊（使用者名稱、組織代碼）
+- 列出有權限存取的 App（僅顯示有明確 level 授權的 App）
+- 顯示各 App 的 Level 與對應 Scopes
 
 ### 修改密碼
 
@@ -824,25 +820,26 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 
 使用者填寫 employee_name 後，系統會透過 Teams Webhook 通知管理員處理。不會自動重設密碼。
 
-### 權限模型
+### 權限模型（Per-User-Per-App Level）
 
 ```
 登入 / Token 交換時的權限檢查邏輯：
-  1. 查 user_app_permissions 表 → 有個人權限？
-     ├─ YES → 使用個人 scopes（覆蓋 level-based mapping）
-     └─ NO  → fallback 到 apps.yaml 規則：
-              ├─ allowed_depts 檢查
-              ├─ min_level 檢查
-              └─ scopes = map_scopes(staff.level)
+  1. 查 allowed_orgs → org_id 符合？（空 = 全部允許）
+     └─ 不符合 → 拒絕存取
+  2. 查 user_app_permissions 表 → 有 level entry？
+     ├─ 有 → 用 level 映射 scopes（見下方）
+     └─ 無 → 拒絕存取（HTTP 403）
 ```
 
-**Level → Scopes 映射規則：**
+**Level → Scopes 自動映射規則：**
 
-| Level | Scopes |
-|-------|--------|
-| 1 | `["read"]` |
-| 2 | `["read", "write"]` |
-| 3 | `["read", "write", "admin"]` |
+| Level | Scopes | 說明 |
+|-------|--------|------|
+| 1 | `["read"]` | Read |
+| 2 | `["read", "write"]` | Read + Write |
+| 3 | `["read", "write", "admin"]` | Full Admin |
+
+> **重要**：使用者必須由 Admin 明確授權 level 才能存取 App。沒有授權 = 無法存取。
 
 ---
 
@@ -854,7 +851,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 |------|------|------|
 | `GET` | `/auth/login?app_id=X&redirect_uri=Y` | 渲染登入頁面 |
 | `POST` | `/auth/login` | 提交登入表單，成功後 302 帶 code 回 App |
-| `GET` | `/auth/register-request?token=X` | 渲染身份驗證頁面（分機 + 部門代碼） |
+| `GET` | `/auth/register-request?token=X` | 渲染身份驗證頁面（分機 + 組織代碼） |
 | `POST` | `/auth/register-request` | 提交身份驗證，通過後觸發 Teams Webhook |
 | `GET` | `/auth/register?token=X` | 渲染註冊頁面（管理員產生的連結） |
 | `POST` | `/auth/register` | 提交註冊（設定密碼） |
@@ -922,7 +919,8 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 ```json
 {
   "sub": "kane.beh",
-  "name": "王小明",
+  "name": "kane.beh",
+  "org_id": "IT",
   "dept": "IT",
   "scopes": ["read", "write"],
   "aud": "ai_chat_app",
@@ -934,9 +932,10 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | 欄位 | 說明 |
 |------|------|
 | `sub` | 使用者名稱（employee_name，如 kane.beh） |
-| `name` | 員工姓名 |
-| `dept` | 部門代碼 |
-| `scopes` | 權限範圍清單（個人權限優先，否則由 Level 自動映射） |
+| `name` | 向下相容欄位（= sub） |
+| `org_id` | 組織代碼 |
+| `dept` | 向下相容欄位（= org_id） |
+| `scopes` | 權限範圍清單（由 per-app level 自動映射） |
 | `aud` | 此 Token 預定存取的 App ID，App 端必須驗證此欄位 |
 | `iat` | Token 簽發時間 (Unix timestamp) |
 | `exp` | Token 過期時間（簽發後 12 小時） |
@@ -951,11 +950,9 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
-| `employee_name` | VARCHAR(50) PK | 使用者名稱 |
-| `name` | VARCHAR | 姓名 |
-| `dept_code` | VARCHAR | 部門代碼 |
-| `level` | INT | 權限等級 (1-3) |
-| `ext` | VARCHAR | 分機號碼（用於身份驗證） |
+| `nt_account` | VARCHAR PK | 使用者名稱（對應 employee_name） |
+| `org_id` | VARCHAR | 組織代碼 |
+| `extension` | VARCHAR | 分機號碼（用於身份驗證） |
 
 ### Auth Local DB (SQLite，讀寫)
 
@@ -987,13 +984,13 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `redirect_uri` | TEXT | 註冊完成後的導回 URI |
 | `expires_at` | REAL | 過期時間（登入產生 10 分鐘 / 管理員產生 24 小時） |
 
-**`user_app_permissions`** — Per-User-Per-App 個人權限
+**`user_app_permissions`** — Per-User-Per-App 權限（Level）
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `employee_name` | VARCHAR(50) PK | 使用者名稱 |
 | `app_id` | VARCHAR(100) PK | 目標 App |
-| `scopes` | TEXT | 權限範圍（JSON array，如 `["read", "write"]`） |
+| `level` | INTEGER | 權限等級（1=Read, 2=Read+Write, 3=Full Admin） |
 | `granted_by` | VARCHAR(50) | 授權者名稱 |
 | `granted_at` | DATETIME | 授權時間 |
 
@@ -1051,16 +1048,16 @@ python scripts/reset_password.py kane.beh --password NewPass123
 ### 管理使用者 App 權限
 
 ```bash
-# 授權
-python scripts/manage_permissions.py grant kane.beh ai_chat_app --scopes read,write
+# 授權（level 1=Read, 2=Read+Write, 3=Full Admin）
+python scripts/manage_permissions.py grant kane.beh ai_chat_app --level 2
 
 # 授權（指定授權者）
-python scripts/manage_permissions.py grant kane.beh ai_chat_app --scopes read,write --granted-by admin
+python scripts/manage_permissions.py grant kane.beh ai_chat_app --level 2 --granted-by admin
 
 # 撤銷
 python scripts/manage_permissions.py revoke kane.beh ai_chat_app
 
-# 列出所有個人權限
+# 列出所有權限
 python scripts/manage_permissions.py list
 
 # 列出特定使用者的權限
@@ -1070,7 +1067,7 @@ python scripts/manage_permissions.py list --user kane.beh
 python scripts/manage_permissions.py list --app ai_chat_app
 ```
 
-有效 scopes：`read`、`write`、`admin`
+Level 說明：`1` = Read、`2` = Read + Write、`3` = Full Admin
 
 ---
 

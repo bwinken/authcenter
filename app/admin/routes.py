@@ -1,7 +1,6 @@
 """Admin routes for Auth Center management (Super Admin + App Admin)."""
 
 import hmac
-import json
 import logging
 import secrets
 
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-VALID_SCOPES = ["read", "write", "admin"]
+VALID_LEVELS = {1: "Read", 2: "Read + Write", 3: "Full Admin"}
 ADMIN_TOKEN_HOURS = 2
 
 
@@ -169,8 +168,7 @@ async def admin_login_submit(
     ):
         token = create_token(
             sub=username,
-            name="Super Admin",
-            dept="",
+            org_id="",
             scopes=["super_admin"],
             aud="auth-center-admin",
             expire_hours=ADMIN_TOKEN_HOURS,
@@ -205,8 +203,7 @@ async def admin_login_submit(
 
     token = create_token(
         sub=staff.employee_name,
-        name=staff.name,
-        dept=staff.dept_code,
+        org_id=staff.org_id,
         scopes=["app_admin"],
         aud="auth-center-admin",
         expire_hours=ADMIN_TOKEN_HOURS,
@@ -279,7 +276,7 @@ async def apps_page(
 ):
     """App 管理頁面（僅 Super Admin）。
 
-    列出所有已註冊的 App，可編輯 allowed_depts / min_level、新增或刪除 App。
+    列出所有已註冊的 App，可編輯 allowed_orgs、新增或刪除 App。
     """
     admin = _verify_admin_cookie(admin_token)
     if not _require_super(admin):
@@ -295,14 +292,13 @@ async def apps_page(
 async def update_app(
     request: Request,
     app_id: str = Form(...),
-    allowed_depts: str = Form(default=""),
-    min_level: int = Form(default=1),
+    allowed_orgs: str = Form(default=""),
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """更新 App 的存取規則（僅 Super Admin）。
 
-    可修改 allowed_depts（逗號分隔的部門代碼）和 min_level（1-3）。
+    可修改 allowed_orgs（逗號分隔的組織代碼）。
     變更會寫回 config/apps.yaml 並記錄至 audit log。
     """
     admin = _verify_admin_cookie(admin_token)
@@ -316,19 +312,16 @@ async def update_app(
         ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, error=f"App '{app_id}' 不存在。")
         return templates.TemplateResponse("admin_apps.html", ctx)
 
-    # Parse allowed_depts (comma-separated)
-    depts = [d.strip() for d in allowed_depts.split(",") if d.strip()] if allowed_depts.strip() else []
-    min_level = max(1, min(3, min_level))
+    # Parse allowed_orgs (comma-separated)
+    orgs = [d.strip() for d in allowed_orgs.split(",") if d.strip()] if allowed_orgs.strip() else []
 
-    old_depts = apps[app_id].get("allowed_depts", [])
-    old_level = apps[app_id].get("min_level", 1)
-    apps[app_id]["allowed_depts"] = depts
-    apps[app_id]["min_level"] = min_level
+    old_orgs = apps[app_id].get("allowed_orgs", [])
+    apps[app_id]["allowed_orgs"] = orgs
     save_registered_apps(apps)
 
     await _log_action(
         sqlite_session, admin["sub"], "update_app", target=app_id,
-        details=f"allowed_depts: {old_depts}→{depts}, min_level: {old_level}→{min_level}",
+        details=f"allowed_orgs: {old_orgs}→{orgs}",
         ip_address=_get_client_ip(request),
     )
 
@@ -377,8 +370,7 @@ async def create_app(
         "client_secret": hashed_secret,
         "redirect_uri": new_redirect_uri.strip(),
         "name": new_app_name.strip(),
-        "allowed_depts": [],
-        "min_level": 1,
+        "allowed_orgs": [],
     }
     save_registered_apps(apps)
 
@@ -481,7 +473,7 @@ async def permissions_page(
     visible_apps = apps if admin.get("is_super") else {k: v for k, v in apps.items() if k in (admin_apps or [])}
 
     ctx = _base_ctx(request, admin, "permissions",
-                    permissions=permissions, apps=visible_apps, valid_scopes=VALID_SCOPES,
+                    permissions=permissions, apps=visible_apps, valid_levels=VALID_LEVELS,
                     user_filter=user_filter, app_filter=app_filter)
     return templates.TemplateResponse("admin_permissions.html", ctx)
 
@@ -491,13 +483,13 @@ async def grant_permission(
     request: Request,
     employee_name: str = Form(...),
     app_id: str = Form(...),
-    scopes: list[str] = Form(...),
+    level: int = Form(...),
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """授予使用者對指定 App 的個人權限。
+    """授予使用者對指定 App 的存取等級。
 
-    接收 employee_name、app_id、scopes（checkbox 多選），驗證 App 存在後寫入資料庫。
+    接收 employee_name、app_id、level（1-3），驗證 App 存在後寫入資料庫。
     App Admin 僅能授權自己管理的 app，若嘗試授權非管理的 app 會被重導回權限頁面。
     操作完成後記錄 audit log。
     """
@@ -515,26 +507,23 @@ async def grant_permission(
         if app_id not in admin_apps:
             return RedirectResponse("/admin/permissions", status_code=303)
 
-    valid = [s for s in scopes if s in VALID_SCOPES]
-    if not valid:
-        valid = ["read"]
+    level = max(1, min(3, level))
 
     apps = load_registered_apps()
     if app_id not in apps:
         ctx = _base_ctx(request, admin, "permissions",
                         permissions=await service.list_permissions(sqlite_session),
-                        apps=apps, valid_scopes=VALID_SCOPES,
+                        apps=apps, valid_levels=VALID_LEVELS,
                         user_filter="", app_filter="",
                         error=f"App ID '{app_id}' 不存在。")
         return templates.TemplateResponse("admin_permissions.html", ctx)
 
-    await service.grant_permission(sqlite_session, employee_name, app_id, valid, admin_name)
+    await service.set_user_level(sqlite_session, employee_name, app_id, level, admin_name)
     await _log_action(
-        sqlite_session, admin_name, "grant_permission", target=f"{employee_name}→{app_id}",
-        details=f"scopes={valid}", ip_address=_get_client_ip(request),
+        sqlite_session, admin_name, "set_user_level", target=f"{employee_name}→{app_id}",
+        details=f"level={level}", ip_address=_get_client_ip(request),
     )
 
-    # Re-fetch with correct filtering
     return RedirectResponse("/admin/permissions", status_code=303)
 
 
@@ -563,7 +552,7 @@ async def revoke_permission(
         if app_id not in admin_apps:
             return RedirectResponse("/admin/permissions", status_code=303)
 
-    deleted = await service.revoke_permission(sqlite_session, employee_name, app_id)
+    deleted = await service.remove_user_permission(sqlite_session, employee_name, app_id)
     if deleted:
         await _log_action(
             sqlite_session, admin_name, "revoke_permission", target=f"{employee_name}→{app_id}",

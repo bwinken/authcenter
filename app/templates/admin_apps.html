@@ -62,8 +62,7 @@
             <tr>
                 <th>App ID</th>
                 <th>名稱</th>
-                <th>允許部門</th>
-                <th>最低 Level</th>
+                <th>允許組織</th>
                 <th>操作</th>
             </tr>
         </thead>
@@ -75,17 +74,10 @@
                 <td>
                     <form method="POST" action="/admin/apps/update" class="app-edit-form">
                         <input type="hidden" name="app_id" value="{{ aid }}">
-                        <input type="text" name="allowed_depts"
-                               value="{{ info.get('allowed_depts', []) | join(', ') }}"
+                        <input type="text" name="allowed_orgs"
+                               value="{{ info.get('allowed_orgs', []) | join(', ') }}"
                                placeholder="全部（留空）" style="width: 130px;"
                                title="以逗號分隔，如：IT, FIN, RD">
-                </td>
-                <td>
-                        <select name="min_level" style="width: 60px;">
-                            {% for lv in [1, 2, 3] %}
-                            <option value="{{ lv }}" {% if info.get('min_level', 1) == lv %}selected{% endif %}>{{ lv }}</option>
-                            {% endfor %}
-                        </select>
                         <button type="submit" class="btn btn-primary btn-sm">儲存</button>
                     </form>
                 </td>

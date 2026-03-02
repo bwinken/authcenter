@@ -26,5 +26,5 @@ class UserAccount(SQLiteBase):
 # --- MySQL model (IT Master DB - read only, reflected) ---
 # We use raw SQL queries for the MySQL staff table to avoid
 # needing a separate DeclarativeBase bound to the MySQL engine.
-# The staff table schema: staff_id (PK), name, dept_code, level, ext
-# staff_id maps to "employee_name" in our system (e.g. kane.beh)
+# The staff table schema: nt_account (PK), org_id, extension
+# nt_account maps to "employee_name" in our system (e.g. kane.beh)

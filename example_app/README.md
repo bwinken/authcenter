@@ -1,6 +1,6 @@
 # AI App 整合 Auth Center 範例
 
-這是一個完整可運行的 FastAPI App，示範如何整合 Auth Center SSO。
+這是一個完整可運行的 FastAPI App，示範如何整合 Auth Center SSO。包含簡易前端頁面，方便測試完整 OAuth2 流程。
 
 ## 啟動
 
@@ -8,9 +8,43 @@
 # 1. 確保 Auth Center 已在 :8000 運行
 # 2. 確保 apps.yaml 中已註冊此 App（預設 ai_chat_app 已存在）
 # 3. 確保 keys/public.pem 存在（與 Auth Center 共用）
+# 4. 確保使用者已被授予 level 權限（見下方「授予權限」）
 
 fastapi dev example_app/main.py --port 8001
 ```
+
+## 前端頁面
+
+| 路徑 | 說明 |
+|------|------|
+| `/` | Landing Page（未登入）/ Dashboard（已登入） |
+| `/jwt` | JWT 詳細資訊（decoded payload + raw token 三段拆解） |
+| `/docs` | Swagger API 文件（可直接 Authorize 測試） |
+| `/logout` | 清除 Cookie 並登出 |
+
+### Dashboard 功能
+
+登入後的 Dashboard 顯示：
+
+- **使用者資訊** — employee name, org_id, scopes badges, audience, token 有效期
+- **API 測試面板** — 四個按鈕可一鍵測試不同權限等級的 endpoint，直接在頁面內顯示 response
+
+## 授予權限
+
+使用者必須有明確的 level 授權才能存取此 App（無權限 = 拒絕存取）：
+
+```bash
+# Level 1: 只能存取 GET /api/data (read)
+python scripts/manage_permissions.py grant kane.beh ai_chat_app --level 1
+
+# Level 2: 可以存取 GET + POST /api/data (read + write)
+python scripts/manage_permissions.py grant kane.beh ai_chat_app --level 2
+
+# Level 3: 可以存取所有 API 含 /api/admin (read + write + admin)
+python scripts/manage_permissions.py grant kane.beh ai_chat_app --level 3
+```
+
+也可以在 Auth Center Admin 後台（`http://localhost:8000/admin/login`）的「權限管理」頁面操作。
 
 ## 開發階段：用 /docs 測試 API
 
@@ -43,21 +77,25 @@ POST /token (username, password)
 
 使用者透過瀏覽器操作，走標準 OAuth2 redirect 流程。
 
-1. 使用者訪問 App → 未登入 → 自動跳轉 Auth Center 登入頁
-2. 登入成功 → Auth Center 302 回 `/auth/callback?code=xxx`
-3. App 用 code 換取 JWT → 存入 HttpOnly Cookie
-4. 後續請求瀏覽器自動帶 Cookie → App 用 public.pem 本地驗證
+1. 使用者訪問 App → 未登入 → 顯示 Landing Page 含 Login 按鈕
+2. 點擊 Login → 跳轉 Auth Center 登入頁
+3. 登入成功 → Auth Center 302 回 `/auth/callback?code=xxx`
+4. App 用 code 換取 JWT → 存入 HttpOnly Cookie → 顯示 Dashboard
+5. 後續請求瀏覽器自動帶 Cookie → App 用 public.pem 本地驗證
 
 ```
 使用者訪問 App
        │
        ▼
-  有 Cookie？──── 有 ──► JWT 有效？──── 有效 ──► 正常使用 App
+  有 Cookie？──── 有 ──► JWT 有效？──── 有效 ──► 顯示 Dashboard
        │                     │
        無                   無效/過期
        │                     │
        ▼                     ▼
-  302 → Auth Center 登入頁
+  顯示 Landing Page（Login 按鈕）
+       │
+       ▼
+  點擊 Login → Auth Center 登入頁
        │
        ▼
   登入成功 → 302 回 /auth/callback?code=xxx
@@ -66,8 +104,17 @@ POST /token (username, password)
   App 用 code + client_secret 換 JWT
        │
        ▼
-  JWT 存入 HttpOnly Cookie → 正常使用 App
+  JWT 存入 HttpOnly Cookie → 顯示 Dashboard
 ```
+
+## API Endpoints
+
+| Method | Path | Required Scopes | 對應 Level |
+|--------|------|-----------------|-----------|
+| `GET` | `/api/me` | (none) | any |
+| `GET` | `/api/data` | `read` | 1+ |
+| `POST` | `/api/data` | `read`, `write` | 2+ |
+| `GET` | `/api/admin` | `read`, `admin` | 3 |
 
 ## 雙模式驗證
 
@@ -82,7 +129,7 @@ POST /token (username, password)
 
 ## 權限檢查
 
-用 `require_scopes` 限制 API 存取：
+用 `require_scopes` 限制 API 存取（scopes 由 Auth Center 的 level 自動映射）：
 
 ```python
 # 任何已登入的使用者
@@ -90,12 +137,12 @@ POST /token (username, password)
 async def me(user=Depends(get_current_user)):
     ...
 
-# 需要 read 權限
+# 需要 read 權限（level 1+）
 @app.get("/api/data")
 async def data(user=Depends(require_scopes(["read"]))):
     ...
 
-# 需要 read + admin 權限
+# 需要 read + admin 權限（level 3）
 @app.get("/api/admin")
 async def admin(user=Depends(require_scopes(["read", "admin"]))):
     ...

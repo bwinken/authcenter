@@ -89,7 +89,7 @@ def save_registered_apps(apps_dict: dict[str, dict]) -> None:
     apps_list = []
     for app_id, info in apps_dict.items():
         entry = {"app_id": app_id}
-        for key in ("client_secret", "redirect_uri", "name", "allowed_depts", "min_level"):
+        for key in ("client_secret", "redirect_uri", "name", "allowed_orgs"):
             if key in info:
                 entry[key] = info[key]
         apps_list.append(entry)

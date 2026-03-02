@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS registration_tokens (
 CREATE TABLE IF NOT EXISTS user_app_permissions (
     employee_name VARCHAR(50)  NOT NULL,
     app_id        VARCHAR(100) NOT NULL,
-    scopes        TEXT         NOT NULL DEFAULT '["read"]',
+    level         INTEGER      NOT NULL DEFAULT 1,
     granted_by    VARCHAR(50)  NOT NULL DEFAULT '',
     granted_at    DATETIME     DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (employee_name, app_id)
