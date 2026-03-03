@@ -169,6 +169,7 @@ MSSQL_USER=readonly_user
 MSSQL_PASSWORD=your_mssql_password
 MSSQL_DATABASE=it_master
 MSSQL_DRIVER=ODBC Driver 17 for SQL Server
+MSSQL_TABLE=staff
 
 # SQLite 路徑（自動建立）
 SQLITE_PATH=./auth_local.db
@@ -235,6 +236,7 @@ fastapi run app/main.py
 | `MSSQL_PASSWORD` | MSSQL 密碼 | — | * |
 | `MSSQL_DATABASE` | MSSQL 資料庫名稱 | `it_master` | |
 | `MSSQL_DRIVER` | ODBC 驅動程式名稱 | `ODBC Driver 17 for SQL Server` | |
+| `MSSQL_TABLE` | 員工資料表名稱 | `staff` | |
 | `SQLITE_PATH` | SQLite 檔案路徑 | `./auth_local.db` | |
 | `PRIVATE_KEY_PATH` | RS256 私鑰路徑 | `./keys/private.pem` | * |
 | `PUBLIC_KEY_PATH` | RS256 公鑰路徑 | `./keys/public.pem` | * |

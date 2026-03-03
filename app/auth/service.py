@@ -9,6 +9,7 @@ from passlib.hash import bcrypt
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models import UserAccount
 from app.schemas import StaffInfo
 
@@ -117,8 +118,9 @@ async def verify_staff(mssql_session: AsyncSession, employee_name: str) -> Staff
     The actual per-app level comes from user_app_permissions in SQLite.
     """
     employee_name = normalize_employee_name(employee_name)
+    table = get_settings().MSSQL_TABLE
     result = await mssql_session.execute(
-        text("SELECT nt_account, org_id, extension FROM staff WHERE nt_account = :ename"),
+        text(f"SELECT nt_account, org_id, extension FROM {table} WHERE nt_account = :ename"),
         {"ename": employee_name},
     )
     row = result.fetchone()

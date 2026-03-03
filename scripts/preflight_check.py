@@ -137,22 +137,23 @@ async def check_mssql(settings, test_user: str | None) -> None:
             result.fetchone()
         record("MSSQL 連線成功", True)
 
-        # 測試 staff 表
+        # 測試資料表
+        table = settings.MSSQL_TABLE
         async with engine.connect() as conn:
             result = await conn.execute(
-                text("SELECT TOP 1 nt_account, org_id, extension FROM staff")
+                text(f"SELECT TOP 1 nt_account, org_id, extension FROM {table}")
             )
             row = result.fetchone()
             if row:
-                record("staff 表可讀取", True, f"範例: nt_account={row[0]}, org_id={row[1]}")
+                record(f"{table} 表可讀取", True, f"範例: nt_account={row[0]}, org_id={row[1]}")
             else:
-                record("staff 表可讀取", True, "表存在但沒有資料")
+                record(f"{table} 表可讀取", True, "表存在但沒有資料")
 
         # 查詢特定使用者
         if test_user:
             async with engine.connect() as conn:
                 result = await conn.execute(
-                    text("SELECT nt_account, org_id, extension FROM staff WHERE nt_account = :ename"),
+                    text(f"SELECT nt_account, org_id, extension FROM {table} WHERE nt_account = :ename"),
                     {"ename": test_user.lower().strip()},
                 )
                 row = result.fetchone()
@@ -160,7 +161,7 @@ async def check_mssql(settings, test_user: str | None) -> None:
                     record(f"查詢使用者 '{test_user}'", True,
                            f"org_id={row[1]}, extension={row[2] or '(空)'}")
                 else:
-                    record(f"查詢使用者 '{test_user}'", False, "該使用者不存在於 staff 表")
+                    record(f"查詢使用者 '{test_user}'", False, f"該使用者不存在於 {table} 表")
 
         await engine.dispose()
 

@@ -20,6 +20,7 @@ class Settings:
     MSSQL_PASSWORD: str = os.getenv("MSSQL_PASSWORD", "")
     MSSQL_DATABASE: str = os.getenv("MSSQL_DATABASE", "it_master")
     MSSQL_DRIVER: str = os.getenv("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server")
+    MSSQL_TABLE: str = os.getenv("MSSQL_TABLE", "staff")
 
     # SQLite (Auth Local DB)
     SQLITE_PATH: str = os.getenv("SQLITE_PATH", str(BASE_DIR / "auth_local.db"))
