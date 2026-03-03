@@ -23,6 +23,10 @@ python scripts/manage_permissions.py revoke <user> <app_id>
 python scripts/manage_permissions.py list [--user <user>] [--app <app_id>]
 python scripts/generate_register_link.py <employee_name>
 python scripts/reset_password.py <employee_name> [--password <new_pw>]
+
+# Preflight check (verify deployment environment)
+python scripts/preflight_check.py
+python scripts/preflight_check.py --test-user <employee_name>
 ```
 
 No test suite exists yet.

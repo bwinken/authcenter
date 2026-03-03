@@ -190,7 +190,20 @@ ADMIN_PASSWORD=your_secure_password
 
 > **注意**：RSA 金鑰路徑建議使用**絕對路徑**，避免在不同目錄啟動時找不到檔案。
 
-### Step 5：啟動服務
+### Step 5：環境檢查（Preflight Check）
+
+啟動前建議先跑環境檢查，逐步確認所有元件是否正確設定：
+
+```bash
+python scripts/preflight_check.py
+
+# 額外測試查詢特定員工
+python scripts/preflight_check.py --test-user kane.beh
+```
+
+會依序檢查 8 個項目：`.env` 環境變數 → ODBC Driver → MSSQL 連線 → SQLite 讀寫 → RSA 金鑰 → apps.yaml → Super Admin → Teams Webhook。每項顯示 `[PASS]` / `[FAIL]`，最後列出所有失敗項目及修正建議。
+
+### Step 6：啟動服務
 
 ```bash
 # 開發模式（auto-reload，修改程式碼自動重啟）
@@ -204,7 +217,7 @@ fastapi run app/main.py
 - 使用者登入頁面：`http://localhost:8000/auth/login?app_id=YOUR_APP_ID&redirect_uri=YOUR_REDIRECT_URI`
 - Admin 管理後台：`http://localhost:8000/admin/login`
 
-### Step 6：驗證安裝
+### Step 7：驗證安裝
 
 1. 打開瀏覽器，前往 `http://localhost:8000/admin/login`
 2. 輸入 `.env` 中設定的 `ADMIN_USERNAME` / `ADMIN_PASSWORD`
