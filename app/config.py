@@ -13,12 +13,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings:
-    # MySQL (IT Master DB - Read Only)
-    MYSQL_HOST: str = os.getenv("MYSQL_HOST", "localhost")
-    MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "3306"))
-    MYSQL_USER: str = os.getenv("MYSQL_USER", "root")
-    MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "")
-    MYSQL_DATABASE: str = os.getenv("MYSQL_DATABASE", "it_master")
+    # MSSQL (IT Master DB - Read Only)
+    MSSQL_HOST: str = os.getenv("MSSQL_HOST", "localhost")
+    MSSQL_PORT: int = int(os.getenv("MSSQL_PORT", "1433"))
+    MSSQL_USER: str = os.getenv("MSSQL_USER", "sa")
+    MSSQL_PASSWORD: str = os.getenv("MSSQL_PASSWORD", "")
+    MSSQL_DATABASE: str = os.getenv("MSSQL_DATABASE", "it_master")
+    MSSQL_DRIVER: str = os.getenv("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server")
 
     # SQLite (Auth Local DB)
     SQLITE_PATH: str = os.getenv("SQLITE_PATH", str(BASE_DIR / "auth_local.db"))
@@ -38,10 +39,12 @@ class Settings:
     ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
 
     @property
-    def mysql_url(self) -> str:
+    def mssql_url(self) -> str:
+        driver = self.MSSQL_DRIVER.replace(" ", "+")
         return (
-            f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
-            f"@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
+            f"mssql+aioodbc://{self.MSSQL_USER}:{self.MSSQL_PASSWORD}"
+            f"@{self.MSSQL_HOST}:{self.MSSQL_PORT}/{self.MSSQL_DATABASE}"
+            f"?driver={driver}"
         )
 
     @property

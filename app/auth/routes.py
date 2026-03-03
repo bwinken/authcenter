@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import load_registered_apps, get_settings
-from app.database import get_mysql_session, get_sqlite_session
+from app.database import get_mssql_session, get_sqlite_session
 from app.auth import service
 from app.auth.jwt_handler import create_token, verify_token
 from app.schemas import TokenRequest, ForgotPasswordRequest
@@ -87,7 +87,7 @@ async def login_submit(
     password: str = Form(...),
     app_id: str = Form(...),
     redirect_uri: str = Form(...),
-    mysql_session: AsyncSession = Depends(get_mysql_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """處理登入表單提交。
@@ -95,7 +95,7 @@ async def login_submit(
     驗證流程：
     0. 檢查頻率限制（同一 IP 5 分鐘內最多 10 次）
     1. 重新驗證 app_id + redirect_uri（防止表單竄改）
-    2. 查 MySQL 確認員工在職
+    2. 查 MSSQL 確認員工在職
     3. 查 SQLite 確認帳號是否已註冊（未註冊則導向註冊頁）
     4. 驗證密碼是否正確
     5. 檢查該員工是否有權存取目標 App
@@ -128,7 +128,7 @@ async def login_submit(
 
     # Authenticate
     staff, error = await service.authenticate(
-        mysql_session, sqlite_session, employee_name, password
+        mssql_session, sqlite_session, employee_name, password
     )
 
     if error == "needs_registration":
@@ -193,7 +193,7 @@ async def register_request_submit(
     extension: str = Form(...),
     org_id: str = Form(...),
     token: str = Form(...),
-    mysql_session: AsyncSession = Depends(get_mysql_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """處理身份驗證表單。
@@ -201,7 +201,7 @@ async def register_request_submit(
     驗證流程：
     1. 驗證 registration token 有效
     2. 驗證輸入格式
-    3. 查 MySQL 取得員工資料
+    3. 查 MSSQL 取得員工資料
     4. 核對分機號碼與組織代碼是否匹配
     5. 核對正確 → 發送 Teams Webhook 通知管理員
     6. Webhook 成功後才作廢 token
@@ -236,8 +236,8 @@ async def register_request_submit(
         ctx["error"] = "組織代碼格式無效。"
         return templates.TemplateResponse("register_request.html", ctx)
 
-    # Verify staff info from MySQL
-    staff = await service.verify_staff(mysql_session, employee_name)
+    # Verify staff info from MSSQL
+    staff = await service.verify_staff(mssql_session, employee_name)
     if staff is None:
         ctx["error"] = "使用者名稱不存在。"
         return templates.TemplateResponse("register_request.html", ctx)
@@ -309,7 +309,7 @@ async def register_submit(
     password: str = Form(...),
     confirm_password: str = Form(...),
     token: str = Form(...),
-    mysql_session: AsyncSession = Depends(get_mysql_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """處理註冊表單提交（設定初始密碼）。
@@ -317,7 +317,7 @@ async def register_submit(
     驗證流程：
     1. 驗證 registration token 有效
     2. 確認兩次密碼輸入一致且長度 >= 8
-    3. 查 MySQL 確認使用者名稱存在
+    3. 查 MSSQL 確認使用者名稱存在
     4. 建立帳號（用 try/except 處理並行 race condition）
     5. 導回登入頁繼續 OAuth 流程
     """
@@ -354,8 +354,8 @@ async def register_submit(
         ctx["error"] = "密碼長度至少 8 個字元。"
         return templates.TemplateResponse("register.html", ctx)
 
-    # Verify staff exists in MySQL
-    staff = await service.verify_staff(mysql_session, employee_name)
+    # Verify staff exists in MSSQL
+    staff = await service.verify_staff(mssql_session, employee_name)
     if staff is None:
         ctx["error"] = "使用者名稱不存在。"
         return templates.TemplateResponse("register.html", ctx)
@@ -384,7 +384,7 @@ async def register_submit(
 @router.post("/token")
 async def exchange_token(
     body: TokenRequest,
-    mysql_session: AsyncSession = Depends(get_mysql_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """用 authorization code 換取 JWT Token（供 App 後端呼叫）。
@@ -411,7 +411,7 @@ async def exchange_token(
         return JSONResponse({"error": "invalid_grant"}, status_code=400)
 
     # Fetch staff info to build token payload
-    staff = await service.verify_staff(mysql_session, employee_name)
+    staff = await service.verify_staff(mssql_session, employee_name)
     if staff is None:
         return JSONResponse({"error": "staff_not_found"}, status_code=400)
 
@@ -539,7 +539,7 @@ def _verify_cookie(access_token: str | None) -> dict | None:
 async def dashboard_page(
     request: Request,
     access_token: str | None = Cookie(default=None),
-    mysql_session: AsyncSession = Depends(get_mysql_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """使用者 Dashboard：顯示有權限存取的 App 列表。
@@ -555,7 +555,7 @@ async def dashboard_page(
             "apps": [],
         })
 
-    staff = await service.verify_staff(mysql_session, user["sub"])
+    staff = await service.verify_staff(mssql_session, user["sub"])
     if staff is None:
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
@@ -595,11 +595,11 @@ async def forgot_password_page(request: Request):
 async def forgot_password_submit(
     request: Request,
     employee_name: str = Form(...),
-    mysql_session: AsyncSession = Depends(get_mysql_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
 ):
     """處理忘記密碼請求（含頻率限制）。
 
-    查詢 MySQL 確認員工存在後，發送 Microsoft Teams Webhook
+    查詢 MSSQL 確認員工存在後，發送 Microsoft Teams Webhook
     通知管理員。不會自動重設密碼，需由管理員手動處理。
     """
     employee_name = service.normalize_employee_name(employee_name)
@@ -612,7 +612,7 @@ async def forgot_password_submit(
         ctx["error"] = "請求過於頻繁，請 5 分鐘後再試。"
         return templates.TemplateResponse("forgot_password.html", ctx)
 
-    staff = await service.verify_staff(mysql_session, employee_name)
+    staff = await service.verify_staff(mssql_session, employee_name)
     if staff is None:
         ctx["error"] = "使用者名稱不存在。"
         return templates.TemplateResponse("forgot_password.html", ctx)

@@ -31,7 +31,7 @@ No test suite exists yet.
 
 ### Dual Database Pattern
 
-MySQL (IT Master DB) is **read-only** — queries employee records (`nt_account`, `org_id`, `extension`) via raw SQL through `get_mysql_session`. SQLite (Auth Local DB) is **read-write** — stores accounts, auth codes, permissions, admin config via SQLAlchemy async ORM through `get_sqlite_session`. Tables are created in-code during `lifespan` startup (not via migrations).
+MSSQL (IT Master DB) is **read-only** — queries employee records (`nt_account`, `org_id`, `extension`) via raw SQL through `get_mssql_session`. SQLite (Auth Local DB) is **read-write** — stores accounts, auth codes, permissions, admin config via SQLAlchemy async ORM through `get_sqlite_session`. Tables are created in-code during `lifespan` startup (not via migrations).
 
 ### App Registry
 
@@ -39,7 +39,7 @@ Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` 
 
 ### Authentication Flow
 
-`POST /auth/login` → verify staff (MySQL) → check account (SQLite) → bcrypt password → check app access rules → generate one-time auth code (5min TTL) → 303 redirect with `?code=xxx`. App backend then calls `POST /auth/token` with `code + client_secret` → gets RS256 JWT (12h).
+`POST /auth/login` → verify staff (MSSQL) → check account (SQLite) → bcrypt password → check app access rules → generate one-time auth code (5min TTL) → 303 redirect with `?code=xxx`. App backend then calls `POST /auth/token` with `code + client_secret` → gets RS256 JWT (12h).
 
 ### Permission Model (Per-User-Per-App Level)
 

@@ -110,14 +110,14 @@ def level_to_scopes(level: int) -> list[str]:
     return LEVEL_SCOPE_MAP.get(level, ["read"])
 
 
-async def verify_staff(mysql_session: AsyncSession, employee_name: str) -> StaffInfo | None:
-    """Check IT Master DB (MySQL) to confirm staff exists. Returns StaffInfo or None.
+async def verify_staff(mssql_session: AsyncSession, employee_name: str) -> StaffInfo | None:
+    """Check IT Master DB (MSSQL) to confirm staff exists. Returns StaffInfo or None.
 
-    Note: level is NOT from MySQL. It will be set to 0 as a placeholder.
+    Note: level is NOT from MSSQL. It will be set to 0 as a placeholder.
     The actual per-app level comes from user_app_permissions in SQLite.
     """
     employee_name = normalize_employee_name(employee_name)
-    result = await mysql_session.execute(
+    result = await mssql_session.execute(
         text("SELECT nt_account, org_id, extension FROM staff WHERE nt_account = :ename"),
         {"ename": employee_name},
     )
@@ -193,7 +193,7 @@ _DUMMY_HASH = bcrypt.hash("__dummy__")
 
 
 async def authenticate(
-    mysql_session: AsyncSession,
+    mssql_session: AsyncSession,
     sqlite_session: AsyncSession,
     employee_name: str,
     password: str,
@@ -208,8 +208,8 @@ async def authenticate(
     employee_name = normalize_employee_name(employee_name)
     generic_error = "使用者名稱或密碼錯誤，請重新輸入。"
 
-    # 1. Verify staff exists in MySQL
-    staff = await verify_staff(mysql_session, employee_name)
+    # 1. Verify staff exists in MSSQL
+    staff = await verify_staff(mssql_session, employee_name)
     if staff is None:
         # Constant-time: still run bcrypt to prevent timing-based user enumeration
         bcrypt.verify(password, _DUMMY_HASH)

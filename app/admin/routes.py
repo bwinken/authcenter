@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings, load_registered_apps, save_registered_apps
-from app.database import get_sqlite_session, get_mysql_session
+from app.database import get_sqlite_session, get_mssql_session
 from app.auth import service
 from app.auth.jwt_handler import create_token, verify_token
 
@@ -146,7 +146,7 @@ async def admin_login_submit(
     username: str = Form(...),
     password: str = Form(...),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
-    mysql_session: AsyncSession = Depends(get_mysql_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
 ):
     """處理管理員登入。
 
@@ -182,7 +182,7 @@ async def admin_login_submit(
         return response
 
     # 2. Try employee authentication (App Admin)
-    staff, error = await service.authenticate(mysql_session, sqlite_session, username, password)
+    staff, error = await service.authenticate(mssql_session, sqlite_session, username, password)
 
     if error == "needs_registration":
         return templates.TemplateResponse("admin_login.html", {

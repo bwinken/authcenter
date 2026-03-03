@@ -65,7 +65,7 @@ Auth Center 是一個為內部 AI 應用程式設計的中央認證服務，提�
               ┌───────────┼───────────┐
               │                       │
     ┌─────────┴─────────┐  ┌─────────┴─────────┐
-    │  MySQL (唯讀)     │  │  SQLite (讀寫)    │
+    │  MSSQL (唯讀)     │  │  SQLite (讀寫)    │
     │  員工主檔資料      │  │  帳號、權限、      │
     │  (IT Master DB)   │  │  Admin 設定       │
     └───────────────────┘  └───────────────────┘
@@ -78,7 +78,7 @@ Auth Center 是一個為內部 AI 應用程式設計的中央認證服務，提�
 | 後端框架 | FastAPI (Python) |
 | JWT 簽發 | PyJWT + RS256 非對稱加密 |
 | 密碼雜湊 | passlib + bcrypt |
-| 員工資料庫 | MySQL (aiomysql，唯讀) |
+| 員工資料庫 | MSSQL (aioodbc，唯讀) |
 | 認證資料庫 | SQLite (aiosqlite，讀寫) |
 | 前端模板 | Jinja2 |
 | 通知 | Microsoft Teams Webhook |
@@ -91,16 +91,59 @@ Auth Center 是一個為內部 AI 應用程式設計的中央認證服務，提�
 ### 前置需求
 
 - Python 3.11+
-- MySQL（員工主檔資料庫，可稍後設定）
+- MSSQL（員工主檔資料庫，需安裝 ODBC Driver）
 - Microsoft Teams Webhook URL（可選，用於通知）
 
-### Step 1：安裝依賴
+### Step 1：安裝 ODBC Driver（Linux）
+
+`aioodbc` 需要 Microsoft ODBC Driver 才能連接 MSSQL。
+
+**方式 A：線上安裝**（機器可連網）
+
+```bash
+# Ubuntu / Debian
+curl https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc
+curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+
+sudo apt update
+sudo ACCEPT_EULA=Y apt install -y msodbcsql17 unixodbc-dev
+```
+
+**方式 B：離線安裝**（Airgapped 環境）
+
+在有網路的機器上先下載所有 `.deb` 包：
+
+```bash
+# 在有網路的同版本 Ubuntu 機器上
+mkdir odbc-offline && cd odbc-offline
+apt download msodbcsql17 unixodbc libodbc2 libodbcinst2 odbcinst
+```
+
+將 `odbc-offline/` 資料夾搬到目標機器（USB、內網傳輸等），然後安裝：
+
+```bash
+cd odbc-offline
+sudo ACCEPT_EULA=Y dpkg -i *.deb
+# 若有依賴問題
+sudo apt --fix-broken install
+```
+
+**驗證安裝**
+
+```bash
+odbcinst -q -d
+# 應輸出: [ODBC Driver 17 for SQL Server]
+```
+
+> 若使用 Driver 18，請同步修改 `.env` 中的 `MSSQL_DRIVER`。
+
+### Step 2：安裝 Python 依賴
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 2：產生 RSA 金鑰對
+### Step 3：產生 RSA 金鑰對
 
 JWT 簽發需要一對 RSA 金鑰。執行以下指令會在 `keys/` 資料夾產生 `private.pem` 和 `public.pem`：
 
@@ -110,7 +153,7 @@ python generate_keys.py
 
 > `private.pem` 僅 Auth Center 持有，用於簽發 JWT。`public.pem` 需提供給各 AI App，用於驗證 JWT。
 
-### Step 3：設定環境變數
+### Step 4：設定環境變數
 
 ```bash
 cp .env.example .env
@@ -119,12 +162,13 @@ cp .env.example .env
 編輯 `.env`，填入必要資訊：
 
 ```env
-# MySQL 連線（員工資料庫）
-MYSQL_HOST=192.168.1.100
-MYSQL_PORT=3306
-MYSQL_USER=readonly_user
-MYSQL_PASSWORD=your_mysql_password
-MYSQL_DATABASE=it_master
+# MSSQL 連線（員工資料庫）
+MSSQL_HOST=192.168.1.100
+MSSQL_PORT=1433
+MSSQL_USER=readonly_user
+MSSQL_PASSWORD=your_mssql_password
+MSSQL_DATABASE=it_master
+MSSQL_DRIVER=ODBC Driver 17 for SQL Server
 
 # SQLite 路徑（自動建立）
 SQLITE_PATH=./auth_local.db
@@ -146,7 +190,7 @@ ADMIN_PASSWORD=your_secure_password
 
 > **注意**：RSA 金鑰路徑建議使用**絕對路徑**，避免在不同目錄啟動時找不到檔案。
 
-### Step 4：啟動服務
+### Step 5：啟動服務
 
 ```bash
 # 開發模式（auto-reload，修改程式碼自動重啟）
@@ -160,7 +204,7 @@ fastapi run app/main.py
 - 使用者登入頁面：`http://localhost:8000/auth/login?app_id=YOUR_APP_ID&redirect_uri=YOUR_REDIRECT_URI`
 - Admin 管理後台：`http://localhost:8000/admin/login`
 
-### Step 5：驗證安裝
+### Step 6：驗證安裝
 
 1. 打開瀏覽器，前往 `http://localhost:8000/admin/login`
 2. 輸入 `.env` 中設定的 `ADMIN_USERNAME` / `ADMIN_PASSWORD`
@@ -172,11 +216,12 @@ fastapi run app/main.py
 
 | 變數 | 說明 | 預設值 | 必填 |
 |------|------|--------|:----:|
-| `MYSQL_HOST` | IT Master DB 主機 | `localhost` | |
-| `MYSQL_PORT` | MySQL 連接埠 | `3306` | |
-| `MYSQL_USER` | MySQL 使用者（唯讀） | `root` | |
-| `MYSQL_PASSWORD` | MySQL 密碼 | — | * |
-| `MYSQL_DATABASE` | MySQL 資料庫名稱 | `it_master` | |
+| `MSSQL_HOST` | IT Master DB 主機 | `localhost` | |
+| `MSSQL_PORT` | MSSQL 連接埠 | `1433` | |
+| `MSSQL_USER` | MSSQL 使用者（唯讀） | `sa` | |
+| `MSSQL_PASSWORD` | MSSQL 密碼 | — | * |
+| `MSSQL_DATABASE` | MSSQL 資料庫名稱 | `it_master` | |
+| `MSSQL_DRIVER` | ODBC 驅動程式名稱 | `ODBC Driver 17 for SQL Server` | |
 | `SQLITE_PATH` | SQLite 檔案路徑 | `./auth_local.db` | |
 | `PRIVATE_KEY_PATH` | RS256 私鑰路徑 | `./keys/private.pem` | * |
 | `PUBLIC_KEY_PATH` | RS256 公鑰路徑 | `./keys/public.pem` | * |
@@ -367,7 +412,7 @@ sequenceDiagram
     participant U as 使用者瀏覽器
     participant A as AI App (Client)
     participant C as Auth Center
-    participant M as MySQL (IT Master)
+    participant M as MSSQL (IT Master)
     participant S as SQLite (Auth Local)
 
     U->>A: 1. 訪問受保護頁面
@@ -414,7 +459,7 @@ sequenceDiagram
 
 | 步驟 | 操作 | 資料來源 | 失敗結果 |
 |------|------|----------|----------|
-| ① | 查詢員工是否在職 | MySQL `staff` 表 | 回傳「使用者名稱或密碼錯誤」（統一錯誤訊息防列舉） |
+| ① | 查詢員工是否在職 | MSSQL `staff` 表 | 回傳「使用者名稱或密碼錯誤」（統一錯誤訊息防列舉） |
 | ② | 查詢帳號是否已註冊 | SQLite `user_accounts` 表 | 顯示「尚未註冊」確認頁，使用者可選擇前往註冊或返回登入 |
 | ③ | bcrypt 比對密碼 | SQLite `user_accounts` 表 | 回傳「使用者名稱或密碼錯誤」 |
 | ④ | 檢查 App 存取權限 | `allowed_orgs` + `user_app_permissions` | 回傳「組織無權」或「無存取權限」(403) |
@@ -426,7 +471,7 @@ sequenceDiagram
 sequenceDiagram
     participant U as 使用者瀏覽器
     participant C as Auth Center
-    participant M as MySQL
+    participant M as MSSQL
     participant S as SQLite
     participant T as Microsoft Teams
     participant A as 管理員
@@ -496,7 +541,7 @@ sequenceDiagram
 sequenceDiagram
     participant U as 使用者瀏覽器
     participant C as Auth Center
-    participant M as MySQL
+    participant M as MSSQL
     participant T as Microsoft Teams
 
     U->>C: GET /auth/forgot-password
@@ -951,7 +996,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 
 ## 12. 資料庫架構
 
-### IT Master DB (MySQL，唯讀)
+### IT Master DB (MSSQL，唯讀)
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
@@ -1106,7 +1151,7 @@ auth-center/
 ├── app/
 │   ├── main.py              # FastAPI 入口，啟動時自動建表
 │   ├── config.py            # 環境變數與 apps.yaml 讀取/寫入
-│   ├── database.py          # 雙 DB 連線管理（MySQL + SQLite）
+│   ├── database.py          # 雙 DB 連線管理（MSSQL + SQLite）
 │   ├── models.py            # SQLAlchemy models
 │   ├── schemas.py           # Pydantic schemas
 │   ├── auth/

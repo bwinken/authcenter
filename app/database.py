@@ -1,4 +1,4 @@
-"""Dual database connection management: MySQL (read-only) + SQLite (read-write)."""
+"""Dual database connection management: MSSQL (read-only) + SQLite (read-write)."""
 
 from collections.abc import AsyncGenerator
 
@@ -8,15 +8,15 @@ from app.config import get_settings
 
 settings = get_settings()
 
-# --- MySQL Engine (IT Master DB - Read Only) ---
-mysql_engine = create_async_engine(
-    settings.mysql_url,
+# --- MSSQL Engine (IT Master DB - Read Only) ---
+mssql_engine = create_async_engine(
+    settings.mssql_url,
     echo=False,
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
 )
-MySQLSessionLocal = async_sessionmaker(mysql_engine, expire_on_commit=False)
+MSSQLSessionLocal = async_sessionmaker(mssql_engine, expire_on_commit=False)
 
 # --- SQLite Engine (Auth Local DB - Read/Write) ---
 sqlite_engine = create_async_engine(
@@ -26,9 +26,9 @@ sqlite_engine = create_async_engine(
 SQLiteSessionLocal = async_sessionmaker(sqlite_engine, expire_on_commit=False)
 
 
-async def get_mysql_session() -> AsyncGenerator[AsyncSession]:
-    """Dependency: yields a read-only MySQL session."""
-    async with MySQLSessionLocal() as session:
+async def get_mssql_session() -> AsyncGenerator[AsyncSession]:
+    """Dependency: yields a read-only MSSQL session."""
+    async with MSSQLSessionLocal() as session:
         yield session
 
 

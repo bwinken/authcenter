@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
-from app.database import sqlite_engine, SQLiteSessionLocal
+from app.database import sqlite_engine, mssql_engine, SQLiteSessionLocal
 from app.auth.routes import router as auth_router, init_templates
 from app.admin.routes import router as admin_router
 from app.auth.service import cleanup_expired_tokens
@@ -118,6 +118,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown: cancel cleanup and dispose engines
     cleanup_task.cancel()
+    await mssql_engine.dispose()
     await sqlite_engine.dispose()
 
 
