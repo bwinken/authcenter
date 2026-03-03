@@ -1,10 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Dashboard - AuthCenter{% endblock %}
-
 {% block card_style %}max-width: 560px;{% endblock %}
-
 {% block content %}
-<style>
+    <style>
     .card { max-width: 560px; }
     .user-info { margin-bottom: 24px; font-size: 14px; color: var(--text-muted); line-height: 1.8; }
     .user-info strong { color: var(--text-main); }
@@ -45,47 +43,36 @@
     }
     .app-link:hover { background: var(--primary); color: #fff; }
     .empty-state { text-align: center; color: var(--text-muted); font-size: 14px; padding: 24px 0; }
-</style>
-
-{% if error %}
-<div class="alert alert-error">{{ error }}</div>
-{% endif %}
-
-{% if staff %}
-<div class="user-info">
-    <strong>{{ staff.employee_name }}</strong><br>
-    組織：{{ staff.org_id }}
-</div>
-
-<h2 style="font-size: 16px; font-weight: 600; margin-bottom: 14px;">可存取的應用程式</h2>
-
-{% if apps %}
-<ul class="app-list">
-{% for app in apps %}
-    <li class="app-item">
-        <div class="app-meta">
-            <div class="app-name">
-                {{ app.name }}
-            </div>
-            <div class="app-scopes">
-                <span class="scope-tag">Level {{ app.level }}</span>
-                {% for scope in app.scopes %}
-                <span class="scope-tag">{{ scope }}</span>
-                {% endfor %}
-            </div>
+    </style>
+    {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+    {% if staff %}
+        <div class="user-info">
+            <strong>{{ staff.employee_name }}</strong>
+            <br>
+            組織：{{ staff.org_id }}
         </div>
-        {% if app.redirect_uri %}
-        <a href="/auth/login?app_id={{ app.app_id }}&redirect_uri={{ app.redirect_uri }}" class="app-link">前往</a>
+        <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 14px;">可存取的應用程式</h2>
+        {% if apps %}
+            <ul class="app-list">
+                {% for app in apps %}
+                    <li class="app-item">
+                        <div class="app-meta">
+                            <div class="app-name">{{ app.name }}</div>
+                            <div class="app-scopes">
+                                <span class="scope-tag">Level {{ app.level }}</span>
+                                {% for scope in app.scopes %}<span class="scope-tag">{{ scope }}</span>{% endfor %}
+                            </div>
+                        </div>
+                        {% if app.redirect_uri %}
+                            <a href="/auth/login?app_id={{ app.app_id }}&redirect_uri={{ app.redirect_uri }}"
+                               class="app-link">前往</a>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <div class="empty-state">目前沒有可存取的應用程式。</div>
         {% endif %}
-    </li>
-{% endfor %}
-</ul>
-{% else %}
-<div class="empty-state">目前沒有可存取的應用程式。</div>
-{% endif %}
-{% endif %}
+    {% endif %}
 {% endblock %}
-
-{% block links %}
-<a href="/auth/change-password">修改密碼</a>
-{% endblock %}
+{% block links %}<a href="/auth/change-password">修改密碼</a>{% endblock %}

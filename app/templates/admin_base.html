@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Admin - AuthCenter{% endblock %}</title>
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-    <style>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>
+            {% block title %}Admin - AuthCenter{% endblock %}
+        </title>
+        <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+        <style>
         :root {
             --primary: #10a37f;
             --primary-hover: #0d8a6a;
@@ -278,42 +280,43 @@
             .admin-main { padding: 16px 12px; }
             .nav-links a { padding: 8px 10px; font-size: 12px; }
         }
-    </style>
-    {% block extra_style %}{% endblock %}
-</head>
-<body>
-    <nav class="admin-nav">
-        <a class="nav-brand" href="/admin/dashboard">
-            <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.47 4.74-3.53 8.93-7 10.01V12h-7V6.39l7-3.11v8.71z"/></svg>
-            AuthCenter
-        </a>
-        <div class="nav-links">
-            <a href="/admin/dashboard" class="{% if active_nav == 'dashboard' %}active{% endif %}">Dashboard</a>
-            {% if is_super %}
-            <a href="/admin/apps" class="{% if active_nav == 'apps' %}active{% endif %}">App 管理</a>
-            {% endif %}
-            <a href="/admin/permissions" class="{% if active_nav == 'permissions' %}active{% endif %}">權限管理</a>
-            {% if is_super %}
-            <a href="/admin/admins" class="{% if active_nav == 'admins' %}active{% endif %}">Admin 管理</a>
-            {% endif %}
-            <a href="/admin/audit-log" class="{% if active_nav == 'audit' %}active{% endif %}">操作紀錄</a>
-        </div>
-        <div class="nav-right">
-            <span>{{ admin_name }}</span>
-            <span class="admin-badge">{% if is_super %}Super Admin{% else %}App Admin{% endif %}</span>
-            <a href="/admin/logout">登出</a>
-        </div>
-    </nav>
-
-    <main class="admin-main">
-        {% if error %}
-        <div class="alert alert-error">{{ error }}</div>
-        {% endif %}
-        {% if success %}
-        <div class="alert alert-success">{{ success }}</div>
-        {% endif %}
-
-        {% block content %}{% endblock %}
-    </main>
-</body>
+        </style>
+        {% block extra_style %}{% endblock %}
+    </head>
+    <body>
+        <nav class="admin-nav">
+            <a class="nav-brand" href="/admin/dashboard">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.47 4.74-3.53 8.93-7 10.01V12h-7V6.39l7-3.11v8.71z" />
+                </svg>
+                AuthCenter
+            </a>
+            <div class="nav-links">
+                <a href="/admin/dashboard"
+                   class="{% if active_nav == 'dashboard' %}active{% endif %}">Dashboard</a>
+                {% if is_super %}
+                    <a href="/admin/apps"
+                       class="{% if active_nav == 'apps' %}active{% endif %}">App 管理</a>
+                {% endif %}
+                <a href="/admin/permissions"
+                   class="{% if active_nav == 'permissions' %}active{% endif %}">權限管理</a>
+                {% if is_super %}
+                    <a href="/admin/admins"
+                       class="{% if active_nav == 'admins' %}active{% endif %}">Admin 管理</a>
+                {% endif %}
+                <a href="/admin/audit-log"
+                   class="{% if active_nav == 'audit' %}active{% endif %}">操作紀錄</a>
+            </div>
+            <div class="nav-right">
+                <span>{{ admin_name }}</span>
+                <span class="admin-badge">{% if is_super %}Super Admin{% else %}App Admin{% endif %}</span>
+                <a href="/admin/logout">登出</a>
+            </div>
+        </nav>
+        <main class="admin-main">
+            {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+            {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
+            {% block content %}{% endblock %}
+        </main>
+    </body>
 </html>

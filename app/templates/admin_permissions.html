@@ -1,8 +1,7 @@
 {% extends "admin_base.html" %}
 {% block title %}權限管理 - AuthCenter Admin{% endblock %}
-
 {% block extra_style %}
-<style>
+    <style>
     .level-tag {
         display: inline-block;
         font-size: 11px;
@@ -22,89 +21,95 @@
         color: #6b7280;
         margin-right: 2px;
     }
-</style>
+    </style>
 {% endblock %}
-
 {% block content %}
-<div class="page-header">
-    <h1>權限管理</h1>
-    <p>管理使用者的 Per-App 存取等級{% if not is_super %}（僅顯示您管理的 App）{% endif %}</p>
-</div>
-
-<!-- Search / Filter -->
-<div class="admin-card">
-    <h2>搜尋</h2>
-    <form method="GET" action="/admin/permissions">
-        <div class="form-row">
-            <input type="text" name="user_filter" value="{{ user_filter }}" placeholder="依使用者名稱篩選">
-            <input type="text" name="app_filter" value="{{ app_filter }}" placeholder="依 App ID 篩選">
-            <button type="submit" class="btn btn-primary">搜尋</button>
-        </div>
-    </form>
-</div>
-
-<!-- Permissions Table -->
-<div class="admin-card">
-    <h2>權限列表（{{ permissions | length }}）</h2>
-    {% if permissions %}
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>使用者</th>
-                <th>應用程式</th>
-                <th>Level</th>
-                <th>Scopes</th>
-                <th>授權者</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for perm in permissions %}
-            <tr>
-                <td>{{ perm.employee_name }}</td>
-                <td>{{ apps.get(perm.app_id, {}).get('name', perm.app_id) }}</td>
-                <td><span class="level-tag level-{{ perm.level }}">Level {{ perm.level }}</span></td>
-                <td>
-                    {% for s in perm.scopes %}
-                    <span class="scope-tag">{{ s }}</span>
+    <div class="page-header">
+        <h1>權限管理</h1>
+        <p>
+            管理使用者的 Per-App 存取等級
+            {% if not is_super %}（僅顯示您管理的 App）{% endif %}
+        </p>
+    </div>
+    <!-- Search / Filter -->
+    <div class="admin-card">
+        <h2>搜尋</h2>
+        <form method="GET" action="/admin/permissions">
+            <div class="form-row">
+                <input type="text"
+                       name="user_filter"
+                       value="{{ user_filter }}"
+                       placeholder="依使用者名稱篩選">
+                <input type="text"
+                       name="app_filter"
+                       value="{{ app_filter }}"
+                       placeholder="依 App ID 篩選">
+                <button type="submit" class="btn btn-primary">搜尋</button>
+            </div>
+        </form>
+    </div>
+    <!-- Permissions Table -->
+    <div class="admin-card">
+        <h2>權限列表（{{ permissions | length }}）</h2>
+        {% if permissions %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>使用者</th>
+                        <th>應用程式</th>
+                        <th>Level</th>
+                        <th>Scopes</th>
+                        <th>授權者</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for perm in permissions %}
+                        <tr>
+                            <td>{{ perm.employee_name }}</td>
+                            <td>{{ apps.get(perm.app_id, {}).get('name', perm.app_id) }}</td>
+                            <td>
+                                <span class="level-tag level-{{ perm.level }}">Level {{ perm.level }}</span>
+                            </td>
+                            <td>
+                                {% for s in perm.scopes %}<span class="scope-tag">{{ s }}</span>{% endfor %}
+                            </td>
+                            <td style="color: var(--text-muted);">{{ perm.granted_by }}</td>
+                            <td>
+                                <form method="POST"
+                                      action="/admin/permissions/revoke"
+                                      style="display: inline">
+                                    <input type="hidden" name="employee_name" value="{{ perm.employee_name }}">
+                                    <input type="hidden" name="app_id" value="{{ perm.app_id }}">
+                                    <button type="submit" class="btn btn-danger btn-sm">撤銷</button>
+                                </form>
+                            </td>
+                        </tr>
                     {% endfor %}
-                </td>
-                <td style="color: var(--text-muted);">{{ perm.granted_by }}</td>
-                <td>
-                    <form method="POST" action="/admin/permissions/revoke" style="display: inline;">
-                        <input type="hidden" name="employee_name" value="{{ perm.employee_name }}">
-                        <input type="hidden" name="app_id" value="{{ perm.app_id }}">
-                        <button type="submit" class="btn btn-danger btn-sm">撤銷</button>
-                    </form>
-                </td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <div class="empty-state">沒有符合條件的權限記錄。</div>
-    {% endif %}
-</div>
-
-<!-- Grant Form -->
-<div class="admin-card">
-    <h2>新增授權</h2>
-    <form method="POST" action="/admin/permissions">
-        <div class="form-row">
-            <input type="text" name="employee_name" placeholder="使用者名稱（如 kane.beh）" required>
-            <select name="app_id" required>
-                <option value="" disabled selected>選擇應用程式</option>
-                {% for aid, ainfo in apps.items() %}
-                <option value="{{ aid }}">{{ ainfo.get('name', aid) }}</option>
-                {% endfor %}
-            </select>
-            <select name="level" required>
-                {% for lv, label in valid_levels.items() %}
-                <option value="{{ lv }}">Level {{ lv }} — {{ label }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <button type="submit" class="btn btn-primary" style="margin-top: 8px;">授權</button>
-    </form>
-</div>
+                </tbody>
+            </table>
+        {% else %}
+            <div class="empty-state">沒有符合條件的權限記錄。</div>
+        {% endif %}
+    </div>
+    <!-- Grant Form -->
+    <div class="admin-card">
+        <h2>新增授權</h2>
+        <form method="POST" action="/admin/permissions">
+            <div class="form-row">
+                <input type="text"
+                       name="employee_name"
+                       placeholder="使用者名稱（如 kane.beh）"
+                       required>
+                <select name="app_id" required>
+                    <option value="" disabled selected>選擇應用程式</option>
+                    {% for aid, ainfo in apps.items() %}<option value="{{ aid }}">{{ ainfo.get('name', aid) }}</option>{% endfor %}
+                </select>
+                <select name="level" required>
+                    {% for lv, label in valid_levels.items() %}<option value="{{ lv }}">Level {{ lv }} — {{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary" style="margin-top: 8px;">授權</button>
+        </form>
+    </div>
 {% endblock %}

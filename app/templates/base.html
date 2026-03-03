@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}AuthCenter | 企業 AI 認證中心{% endblock %}</title>
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-    <style>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>
+            {% block title %}AuthCenter | 企業 AI 認證中心{% endblock %}
+        </title>
+        <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+        <style>
         :root {
             --primary: #10a37f;
             --primary-hover: #0d8a6a;
@@ -190,23 +192,23 @@
             body { padding: 16px; }
             .card { padding: 28px 20px; }
         }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <div class="logo-area">
-            <div class="logo-icon">
-                <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.47 4.74-3.53 8.93-7 10.01V12h-7V6.39l7-3.11v8.71z"/></svg>
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="logo-area">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.47 4.74-3.53 8.93-7 10.01V12h-7V6.39l7-3.11v8.71z" />
+                    </svg>
+                </div>
+                <h1>AuthCenter</h1>
+                <p class="subtitle">企業 AI App 統一認證門戶</p>
             </div>
-            <h1>AuthCenter</h1>
-            <p class="subtitle">企業 AI App 統一認證門戶</p>
+            {% block content %}{% endblock %}
+            <div class="links">
+                {% block links %}{% endblock %}
+            </div>
         </div>
-
-        {% block content %}{% endblock %}
-
-        <div class="links">
-            {% block links %}{% endblock %}
-        </div>
-    </div>
-</body>
+    </body>
 </html>
