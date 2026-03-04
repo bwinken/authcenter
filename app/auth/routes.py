@@ -474,12 +474,22 @@ async def exchange_token(
 @router.get("/change-password", response_class=HTMLResponse)
 async def change_password_page(
     request: Request,
+    success: str | None = None,
     access_token: str | None = Cookie(default=None),
 ):
     """渲染修改密碼頁面。
 
     使用者必須帶有有效的 JWT Cookie 才能存取此頁面。
+    密碼修改成功後會帶 ?success=1 並清除 cookie，顯示成功訊息。
     """
+    if success:
+        return templates.TemplateResponse("change_password.html", {
+            "request": request,
+            "employee_name": "",
+            "error": None,
+            "success": True,
+        })
+
     user = _verify_cookie(access_token)
     if user is None:
         return templates.TemplateResponse("change_password.html", {
@@ -550,8 +560,9 @@ async def change_password_submit(
         ctx["error"] = error
         return templates.TemplateResponse("change_password.html", ctx)
 
-    ctx["success"] = True
-    return templates.TemplateResponse("change_password.html", ctx)
+    response = RedirectResponse("/auth/change-password?success=1", status_code=303)
+    response.delete_cookie("access_token")
+    return response
 
 
 def _verify_cookie(access_token: str | None) -> dict | None:
