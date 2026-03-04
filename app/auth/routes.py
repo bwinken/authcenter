@@ -135,8 +135,10 @@ async def login_submit(
         return templates.TemplateResponse("not_registered.html", {
             "request": request,
             "employee_name": employee_name,
-            "register_url": f"/auth/register-request?token={reg_token}",
+            "token": reg_token,
             "login_url": f"/auth/login?app_id={app_id}&redirect_uri={redirect_uri}",
+            "success": False,
+            "error": None,
         })
 
     if error:
@@ -225,125 +227,88 @@ async def pre_register_submit(
     return templates.TemplateResponse("not_registered.html", {
         "request": request,
         "employee_name": employee_name,
-        "register_url": f"/auth/register-request?token={reg_token}",
+        "token": reg_token,
         "login_url": login_url,
-    })
-
-
-# ─── Registration Request (identity verification → webhook) ──
-
-@router.get("/register-request", response_class=HTMLResponse)
-async def register_request_page(
-    request: Request,
-    token: str = Query(...),
-    sqlite_session: AsyncSession = Depends(get_sqlite_session),
-):
-    """渲染身份驗證頁面。
-
-    員工首次登入時導向此頁面，需填寫分機號碼與組織代碼以核對身份。
-    核對正確後系統發送 Teams Webhook 通知管理員，管理員再產生註冊連結。
-    """
-    data = await service.consume_registration_token(sqlite_session, token)
-    if data is None:
-        return templates.TemplateResponse("register_request.html", {
-            "request": request,
-            "employee_name": "",
-            "token": "",
-            "error": "連結已過期或無效，請從登入頁面重新操作。",
-            "success": False,
-        })
-
-    return templates.TemplateResponse("register_request.html", {
-        "request": request,
-        "employee_name": data["employee_name"],
-        "token": token,
-        "error": None,
         "success": False,
+        "error": None,
     })
 
 
-@router.post("/register-request")
-async def register_request_submit(
+# ─── Registration Request (webhook notification) ─────────────
+
+@router.post("/request-register")
+async def request_register_submit(
     request: Request,
-    employee_name: str = Form(...),
-    extension: str = Form(...),
-    org_id: str = Form(...),
     token: str = Form(...),
     mssql_session: AsyncSession = Depends(get_mssql_session),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """處理身份驗證表單。
+    """處理註冊申請：直接發送 Teams Webhook 通知管理員。
 
     驗證流程：
     1. 驗證 registration token 有效
-    2. 驗證輸入格式
-    3. 查 MSSQL 取得員工資料
-    4. 核對分機號碼與組織代碼是否匹配
-    5. 核對正確 → 發送 Teams Webhook 通知管理員
-    6. Webhook 成功後才作廢 token
+    2. 查 MSSQL 取得員工資料
+    3. 發送 Teams Webhook 通知管理員
+    4. Webhook 成功後作廢 token
     """
-    employee_name = service.normalize_employee_name(employee_name)
-
     data = await service.consume_registration_token(sqlite_session, token)
     if data is None:
-        return templates.TemplateResponse("register_request.html", {
+        return templates.TemplateResponse("not_registered.html", {
+            "request": request,
+            "employee_name": "",
+            "token": "",
+            "login_url": "/auth/dashboard",
+            "success": False,
+            "error": "連結已過期或無效，請從登入頁面重新操作。",
+        })
+
+    employee_name = data["employee_name"]
+    app_id = data.get("app_id", "")
+    redirect_uri = data.get("redirect_uri", "")
+    login_url = f"/auth/login?app_id={app_id}&redirect_uri={redirect_uri}" if app_id else "/auth/dashboard"
+
+    # Get staff info from MSSQL
+    staff = await service.verify_staff(mssql_session, employee_name)
+    if staff is None:
+        return templates.TemplateResponse("not_registered.html", {
             "request": request,
             "employee_name": employee_name,
             "token": "",
-            "error": "連結已過期或無效，請從登入頁面重新操作。",
+            "login_url": login_url,
             "success": False,
+            "error": "員工資料不存在，請聯繫 IT 部門。",
         })
 
-    ctx = {
-        "request": request,
-        "employee_name": employee_name,
-        "token": token,
-        "error": None,
-        "success": False,
-    }
-
-    # Validate input format and length
-    extension = extension.strip()
-    org_id = org_id.strip()
-    if not extension or len(extension) > 20:
-        ctx["error"] = "分機號碼格式無效。"
-        return templates.TemplateResponse("register_request.html", ctx)
-    if not org_id or len(org_id) > 20:
-        ctx["error"] = "組織代碼格式無效。"
-        return templates.TemplateResponse("register_request.html", ctx)
-
-    # Verify staff info from MSSQL
-    staff = await service.verify_staff(mssql_session, employee_name)
-    if staff is None:
-        ctx["error"] = "使用者名稱不存在。"
-        return templates.TemplateResponse("register_request.html", ctx)
-
-    # Verify extension and org_id match
-    if staff.extension != extension:
-        ctx["error"] = "分機號碼不正確。"
-        return templates.TemplateResponse("register_request.html", ctx)
-
-    if staff.org_id != org_id:
-        ctx["error"] = "組織代碼不正確。"
-        return templates.TemplateResponse("register_request.html", ctx)
-
-    # Identity verified — send webhook to admin
-    app_name = data.get("app_id", "Unknown")
+    # Resolve app name for webhook message
+    app_name = app_id or "Dashboard"
     apps = load_registered_apps()
-    app_info = apps.get(data.get("app_id", ""))
+    app_info = apps.get(app_id, {})
     if app_info:
         app_name = app_info.get("name", app_name)
 
+    # Send webhook notification to admin
     sent = await send_registration_request_notification(staff, app_name)
     if not sent:
-        ctx["error"] = "通知發送失敗，請聯繫 IT 部門。"
-        return templates.TemplateResponse("register_request.html", ctx)
+        return templates.TemplateResponse("not_registered.html", {
+            "request": request,
+            "employee_name": employee_name,
+            "token": token,
+            "login_url": login_url,
+            "success": False,
+            "error": "通知發送失敗，請聯繫 IT 管理員協助處理。",
+        })
 
-    # Only invalidate AFTER webhook succeeds (#6)
+    # Invalidate token after webhook succeeds
     await service.invalidate_registration_token(sqlite_session, token)
 
-    ctx["success"] = True
-    return templates.TemplateResponse("register_request.html", ctx)
+    return templates.TemplateResponse("not_registered.html", {
+        "request": request,
+        "employee_name": employee_name,
+        "token": "",
+        "login_url": login_url,
+        "success": True,
+        "error": None,
+    })
 
 
 # ─── Register Page (admin-generated link) ────────────────────
@@ -687,8 +652,10 @@ async def dashboard_login(
         return templates.TemplateResponse("not_registered.html", {
             "request": request,
             "employee_name": employee_name,
-            "register_url": f"/auth/register-request?token={reg_token}",
+            "token": reg_token,
             "login_url": "/auth/dashboard",
+            "success": False,
+            "error": None,
         })
 
     if error:
