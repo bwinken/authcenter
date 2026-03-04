@@ -1,5 +1,6 @@
 """Core authentication business logic."""
 
+import re
 import secrets
 import time
 from collections import defaultdict
@@ -35,9 +36,34 @@ def record_attempt(client_ip: str) -> None:
     _rate_limit_store[client_ip].append(time.time())
 
 
+def cleanup_rate_limit_store() -> None:
+    """Remove IPs with no recent attempts. Called periodically to prevent memory leak."""
+    now = time.time()
+    stale = [ip for ip, ts in _rate_limit_store.items() if all(now - t >= RATE_LIMIT_WINDOW for t in ts)]
+    for ip in stale:
+        del _rate_limit_store[ip]
+
+
 def normalize_employee_name(name: str) -> str:
     """Normalize employee name to lowercase, stripped of whitespace."""
     return name.lower().strip()
+
+
+# ─── Password Policy ─────────────────────────────────────────
+
+def validate_password(password: str, employee_name: str = "") -> str:
+    """Validate password strength. Returns error message or empty string on success."""
+    if len(password) < 8:
+        return "密碼長度至少 8 個字元。"
+    if not re.search(r"[A-Z]", password):
+        return "密碼須包含至少一個大寫英文字母。"
+    if not re.search(r"[a-z]", password):
+        return "密碼須包含至少一個小寫英文字母。"
+    if not re.search(r"\d", password):
+        return "密碼須包含至少一個數字。"
+    if employee_name and password.lower() == employee_name.lower():
+        return "密碼不可與使用者名稱相同。"
+    return ""
 
 
 # ─── Registration Tokens (SQLite-backed) ─────────────────────

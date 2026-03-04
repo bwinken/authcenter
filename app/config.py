@@ -1,5 +1,6 @@
 """Application configuration loaded from .env and apps.yaml."""
 
+import re
 from pathlib import Path
 from functools import lru_cache
 from urllib.parse import quote_plus
@@ -21,7 +22,14 @@ class Settings:
     MSSQL_PASSWORD: str = os.getenv("MSSQL_PASSWORD", "")
     MSSQL_DATABASE: str = os.getenv("MSSQL_DATABASE", "it_master")
     MSSQL_DRIVER: str = os.getenv("MSSQL_DRIVER", "ODBC Driver 17 for SQL Server")
-    MSSQL_TABLE: str = os.getenv("MSSQL_TABLE", "staff")
+    _raw_mssql_table: str = os.getenv("MSSQL_TABLE", "staff")
+
+    @property
+    def MSSQL_TABLE(self) -> str:
+        table = self._raw_mssql_table
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,127}", table):
+            raise ValueError(f"MSSQL_TABLE contains invalid characters: {table!r}")
+        return table
 
     # SQLite (Auth Local DB)
     SQLITE_PATH: str = os.getenv("SQLITE_PATH", str(BASE_DIR / "auth_local.db"))
@@ -103,7 +111,7 @@ def save_registered_apps(apps_dict: dict[str, dict]) -> None:
     apps_list = []
     for app_id, info in apps_dict.items():
         entry = {"app_id": app_id}
-        for key in ("client_secret", "redirect_uri", "name", "allowed_orgs", "default_level"):
+        for key in ("client_secret", "redirect_uri", "name", "allowed_orgs", "default_level", "token_expire_hours"):
             if key in info:
                 entry[key] = info[key]
         apps_list.append(entry)

@@ -112,8 +112,9 @@
                     <tr>
                         <th>App ID</th>
                         <th>名稱</th>
-                        <th>允許組織</th>
-                        <th>預設權限</th>
+                        <th>允許組織<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">限制哪些組織的員工可以存取此 App。留空表示不限制。</span></span></th>
+                        <th>預設權限<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">允許組織內使用者的預設權限等級，需先設定允許組織才生效。</span></span></th>
+                        <th>Token 有效時間<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">使用者登入後取得的 JWT Token 有效時間（1-720 小時）。</span></span></th>
                         <th>操作</th>
                     </tr>
                 </thead>
@@ -124,8 +125,9 @@
                                 <code style="font-size: 12px;">{{ aid }}</code>
                             </td>
                             <td>{{ info.get('name', aid) }}</td>
-                            <td colspan="2">
+                            <td colspan="3">
                                 <form method="POST" action="/admin/apps/update" class="app-edit-form">
+                                    {{ csrf_input(request) }}
                                     <input type="hidden" name="app_id" value="{{ aid }}">
                                     <input type="hidden"
                                            name="allowed_orgs"
@@ -165,6 +167,13 @@
                                         <option value="2" {% if info.get('default_level', 0) == 2 %}selected{% endif %}>Level 2 (R+W)</option>
                                         <option value="3" {% if info.get('default_level', 0) == 3 %}selected{% endif %}>Level 3 (Admin)</option>
                                     </select>
+                                    <div style="display: flex; align-items: center; gap: 4px;">
+                                        <input type="number" name="token_expire_hours"
+                                               value="{{ info.get('token_expire_hours', 12) }}"
+                                               min="1" max="720" style="width: 70px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px;"
+                                               title="JWT Token 有效時間（小時）">
+                                        <span style="font-size: 12px; color: var(--text-muted);">小時</span>
+                                    </div>
                                     <button type="submit" class="btn btn-primary btn-sm">儲存</button>
                                 </form>
                             </td>
@@ -172,6 +181,7 @@
                                 <details>
                                     <summary>刪除</summary>
                                     <form method="POST" action="/admin/apps/delete" style="display: inline;">
+                                        {{ csrf_input(request) }}
                                         <input type="hidden" name="app_id" value="{{ aid }}">
                                         <button type="submit"
                                                 class="btn btn-danger btn-sm"
@@ -193,13 +203,14 @@
     <div class="admin-card">
         <h2>新增 App</h2>
         <form method="POST" action="/admin/apps/create">
+            {{ csrf_input(request) }}
             <div class="form-row">
                 <input type="text"
                        name="new_app_id"
                        placeholder="App ID（如 ai_chat_app）"
                        required
                        pattern="[a-z0-9_]+"
-                       title="僅限小寫字母、數字和底線">
+                       title="僅限小寫字母、數字和底線（如 ai_chat_app）">
                 <input type="text" name="new_app_name" placeholder="顯示名稱" required>
             </div>
             <div class="form-row">

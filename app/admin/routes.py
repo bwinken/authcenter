@@ -23,6 +23,14 @@ VALID_LEVELS = {1: "Read", 2: "Read + Write", 3: "Full Admin"}
 ADMIN_TOKEN_HOURS = 2
 
 
+def _get_client_ip(request: Request) -> str:
+    """Extract client IP from request, respecting X-Forwarded-For behind reverse proxy."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def _get_templates() -> Jinja2Templates:
     from app.auth.routes import templates
     return templates
@@ -161,6 +169,14 @@ async def admin_login_submit(
     templates = _get_templates()
     settings = get_settings()
     username = username.strip()
+
+    # Rate limit check
+    client_ip = _get_client_ip(request)
+    service.record_attempt(client_ip)
+    if not service.check_rate_limit(client_ip):
+        return templates.TemplateResponse("admin_login.html", {
+            "request": request, "error": "登入嘗試過於頻繁，請 5 分鐘後再試。",
+        })
 
     # 1. Check Super Admin (.env)
     if (
@@ -377,13 +393,14 @@ async def update_app(
     app_id: str = Form(...),
     allowed_orgs: str = Form(default=""),
     default_level: int = Form(default=0),
+    token_expire_hours: int = Form(default=12),
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
     mssql_session: AsyncSession = Depends(get_mssql_session),
 ):
     """更新 App 的存取規則（僅 Super Admin）。
 
-    可修改 allowed_orgs（逗號分隔的組織代碼）及 default_level（組織預設權限等級）。
+    可修改 allowed_orgs、default_level、token_expire_hours。
     變更會寫回 config/apps.yaml 並記錄至 audit log。
     """
     admin = _verify_admin_cookie(admin_token)
@@ -403,13 +420,16 @@ async def update_app(
 
     old_orgs = apps[app_id].get("allowed_orgs", [])
     old_default_level = apps[app_id].get("default_level", 0)
+    old_token_hours = apps[app_id].get("token_expire_hours", 12)
+    token_expire_hours = max(1, min(720, token_expire_hours))
     apps[app_id]["allowed_orgs"] = orgs
     apps[app_id]["default_level"] = default_level
+    apps[app_id]["token_expire_hours"] = token_expire_hours
     save_registered_apps(apps)
 
     await _log_action(
         sqlite_session, admin["sub"], "update_app", target=app_id,
-        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}",
+        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}, token_expire_hours: {old_token_hours}→{token_expire_hours}",
 
     )
 
@@ -462,6 +482,7 @@ async def create_app(
         "name": new_app_name.strip(),
         "allowed_orgs": [],
         "default_level": 0,
+        "token_expire_hours": 12,
     }
     save_registered_apps(apps)
 
@@ -978,3 +999,22 @@ async def delete_user_account(
     else:
         qs = urlencode({"err": f"找不到使用者 {employee_name}"})
     return RedirectResponse(f"/admin/users?{qs}", status_code=303)
+
+
+# ═══════════════════════════════════════════════════════════════
+# GUIDE (all admins)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/guide", response_class=HTMLResponse)
+async def guide_page(
+    request: Request,
+    admin_token: str | None = Cookie(default=None),
+):
+    """使用指南頁面，說明各項管理功能的操作方式。"""
+    admin = _verify_admin_cookie(admin_token)
+    if admin is None:
+        return RedirectResponse("/admin/login", status_code=303)
+
+    templates = _get_templates()
+    ctx = _base_ctx(request, admin, "guide")
+    return templates.TemplateResponse("admin_guide.html", ctx)

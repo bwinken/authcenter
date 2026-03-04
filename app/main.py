@@ -6,8 +6,9 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from loguru import logger
 from sqlalchemy import text
@@ -15,7 +16,9 @@ from sqlalchemy import text
 from app.database import sqlite_engine, mssql_engine, SQLiteSessionLocal
 from app.auth.routes import router as auth_router, init_templates
 from app.admin.routes import router as admin_router
-from app.auth.service import cleanup_expired_tokens
+from app.auth.service import cleanup_expired_tokens, cleanup_rate_limit_store
+from app.config import load_registered_apps
+from app.csrf import CSRFMiddleware, csrf_input
 
 
 # ─── Loguru Setup ─────────────────────────────────────────────
@@ -75,8 +78,9 @@ async def _periodic_cleanup() -> None:
         try:
             async with SQLiteSessionLocal() as session:
                 await cleanup_expired_tokens(session)
+            cleanup_rate_limit_store()
         except Exception:
-            logger.exception("Error during periodic token cleanup")
+            logger.exception("Error during periodic cleanup")
 
 
 @asynccontextmanager
@@ -158,6 +162,10 @@ async def lifespan(app: FastAPI):
             "CREATE INDEX IF NOT EXISTS idx_reg_tokens_expires_at ON registration_tokens(expires_at)"
         ))
 
+    # Enable WAL mode for better concurrent read/write performance (safe for multi-worker)
+    async with sqlite_engine.begin() as conn:
+        await conn.execute(text("PRAGMA journal_mode=WAL"))
+
     # Start background cleanup task
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     logger.info("Auth Center started, background cleanup scheduled every %ds", CLEANUP_INTERVAL)
@@ -177,20 +185,64 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - allow registered app origins
+# CORS - derive allowed origins from registered apps' redirect_uri
+def _get_cors_origins() -> list[str]:
+    """Extract origins (scheme + host + port) from registered app redirect URIs."""
+    from urllib.parse import urlparse
+    origins = set()
+    for info in load_registered_apps().values():
+        uri = info.get("redirect_uri", "")
+        if uri:
+            parsed = urlparse(uri)
+            origin = f"{parsed.scheme}://{parsed.netloc}"
+            if origin and parsed.scheme:
+                origins.add(origin)
+    return list(origins) or ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict to known app origins in production
+    allow_origins=_get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# CSRF protection (Double Submit Cookie)
+app.add_middleware(CSRFMiddleware)
+
 # Jinja2 templates
 templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
+templates.env.globals["csrf_input"] = csrf_input
 init_templates(templates)
 
 # Routes
 app.include_router(auth_router)
 app.include_router(admin_router)
+
+
+@app.get("/health")
+async def health_check():
+    """Health check — 驗證 SQLite 和 MSSQL 連線狀態。"""
+    status = {"status": "ok", "sqlite": "ok", "mssql": "ok"}
+    try:
+        async with sqlite_engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception as e:
+        status["sqlite"] = f"error: {e}"
+        status["status"] = "degraded"
+    try:
+        async with mssql_engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception as e:
+        status["mssql"] = f"error: {e}"
+        status["status"] = "degraded"
+    code = 200 if status["status"] == "ok" else 503
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status, status_code=code)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def home_page(request: Request):
+    """使用者首頁 — 服務說明與常用功能導引。"""
+    return templates.TemplateResponse("home.html", {"request": request})

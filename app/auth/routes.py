@@ -386,8 +386,9 @@ async def register_submit(
         ctx["error"] = "兩次輸入的密碼不一致。"
         return templates.TemplateResponse("register.html", ctx)
 
-    if len(password) < 8:
-        ctx["error"] = "密碼長度至少 8 個字元。"
+    pw_error = service.validate_password(password, employee_name)
+    if pw_error:
+        ctx["error"] = pw_error
         return templates.TemplateResponse("register.html", ctx)
 
     # Verify staff exists in MSSQL
@@ -418,6 +419,7 @@ async def register_submit(
 
 @router.post("/token")
 async def exchange_token(
+    request: Request,
     body: TokenRequest,
     mssql_session: AsyncSession = Depends(get_mssql_session),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
@@ -430,6 +432,12 @@ async def exchange_token(
 
     回傳格式：{ access_token, token_type, expires_in }
     """
+    # Rate limit check
+    client_ip = _get_client_ip(request)
+    service.record_attempt(client_ip)
+    if not service.check_rate_limit(client_ip):
+        return JSONResponse({"error": "rate_limited"}, status_code=429)
+
     apps = load_registered_apps()
     app_info = apps.get(body.app_id)
 
@@ -455,17 +463,19 @@ async def exchange_token(
     if level is None:
         return JSONResponse({"error": "no_permission"}, status_code=403)
     scopes = service.level_to_scopes(level)
+    expire_hours = app_info.get("token_expire_hours", 12)
     token = create_token(
         sub=staff.employee_name,
         org_id=staff.org_id,
         scopes=scopes,
         aud=body.app_id,
+        expire_hours=expire_hours,
     )
 
     return {
         "access_token": token,
         "token_type": "bearer",
-        "expires_in": 43200,
+        "expires_in": expire_hours * 3600,
     }
 
 
@@ -545,8 +555,9 @@ async def change_password_submit(
         ctx["error"] = "兩次輸入的新密碼不一致。"
         return templates.TemplateResponse("change_password.html", ctx)
 
-    if len(new_password) < 8:
-        ctx["error"] = "新密碼長度至少 8 個字元。"
+    pw_error = service.validate_password(new_password, employee_name)
+    if pw_error:
+        ctx["error"] = pw_error
         return templates.TemplateResponse("change_password.html", ctx)
 
     if old_password == new_password:

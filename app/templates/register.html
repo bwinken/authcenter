@@ -11,6 +11,7 @@
         <div class="alert alert-success">帳號建立成功！請返回登入頁面。</div>
     {% elif token %}
         <form method="POST" action="/auth/register">
+            {{ csrf_input(request) }}
             <input type="hidden" name="employee_name" value="{{ employee_name }}">
             <input type="hidden" name="token" value="{{ token }}">
             <div class="form-group">
@@ -18,7 +19,7 @@
                 <input type="password"
                        id="password"
                        name="password"
-                       placeholder="至少 8 個字元"
+                       placeholder="至少 8 字元，含大小寫及數字"
                        required
                        minlength="8">
             </div>

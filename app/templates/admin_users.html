@@ -116,6 +116,7 @@
                                             <form method="POST"
                                                   action="/admin/users/reset-password"
                                                   style="display: inline;">
+                                                {{ csrf_input(request) }}
                                                 <input type="hidden"
                                                        name="employee_name"
                                                        value="{{ user.employee_name }}">
@@ -128,6 +129,7 @@
                                             <form method="POST"
                                                   action="/admin/users/delete"
                                                   style="display: inline;">
+                                                {{ csrf_input(request) }}
                                                 <input type="hidden"
                                                        name="employee_name"
                                                        value="{{ user.employee_name }}">

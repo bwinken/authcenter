@@ -31,6 +31,7 @@
                             <td style="font-size: 12px; color: var(--text-muted);">{{ aa.assigned_at }}</td>
                             <td>
                                 <form method="POST" action="/admin/admins/remove" style="display: inline;">
+                                    {{ csrf_input(request) }}
                                     <input type="hidden" name="employee_name" value="{{ aa.employee_name }}">
                                     <input type="hidden" name="app_id" value="{{ aa.app_id }}">
                                     <button type="submit" class="btn btn-danger btn-sm">移除</button>
@@ -46,8 +47,9 @@
     </div>
     <!-- Assign New App Admin -->
     <div class="admin-card">
-        <h2>指派 App Admin</h2>
+        <h2>指派 App Admin<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">App Admin 可管理其負責 App 的使用者權限，但無法管理 App 設定。</span></span></h2>
         <form method="POST" action="/admin/admins/assign">
+            {{ csrf_input(request) }}
             <div class="form-row">
                 <input type="text"
                        name="employee_name"

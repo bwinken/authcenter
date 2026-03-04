@@ -27,18 +27,18 @@
         </div>
         <div class="stat-card">
             <div class="stat-value">{{ perm_count }}</div>
-            <div class="stat-label">個人權限記錄</div>
+            <div class="stat-label">個人權限記錄<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">使用者被明確授權存取某個 App 的記錄數量。</span></span></div>
         </div>
         {% if is_super %}
             <div class="stat-card">
                 <div class="stat-value">{{ admin_count }}</div>
-                <div class="stat-label">App Admin 指派</div>
+                <div class="stat-label">App Admin 指派<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">被指定為特定 App 管理員的員工數量。</span></span></div>
             </div>
         {% endif %}
         {% if is_super %}
             <div class="stat-card">
                 <div class="stat-value">{{ pending_registrations | length }}</div>
-                <div class="stat-label">待處理註冊</div>
+                <div class="stat-label">待處理註冊<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">員工嘗試登入但尚未註冊帳號的請求，可產生註冊連結給他們。</span></span></div>
             </div>
         {% endif %}
     </div>
@@ -152,6 +152,7 @@
                                 <form method="POST"
                                       action="/admin/generate-register-link"
                                       style="display: inline;">
+                                    {{ csrf_input(request) }}
                                     <input type="hidden"
                                            name="employee_name"
                                            value="{{ p.employee_name }}">

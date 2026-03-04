@@ -4,6 +4,7 @@
     <p class="subtitle" style="margin-bottom: 24px;">請輸入您的使用者名稱以開始註冊流程。</p>
     {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
     <form method="POST" action="/auth/pre-register">
+        {{ csrf_input(request) }}
         <input type="hidden" name="app_id" value="{{ app_id }}">
         <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
         <div class="form-group">

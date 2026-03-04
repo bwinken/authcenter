@@ -22,14 +22,13 @@ def create_token(
     now = datetime.now(timezone.utc)
     hours = expire_hours if expire_hours is not None else TOKEN_EXPIRE_HOURS
     payload = {
+        "iss": "auth-center",
         "sub": sub,
-        "name": sub,         # backward compatible (display name = employee_name)
-        "dept": org_id,      # backward compatible
-        "org_id": org_id,
-        "scopes": scopes,
         "aud": aud,
         "iat": now,
         "exp": now + timedelta(hours=hours),
+        "org_id": org_id,
+        "scopes": scopes,
     }
     return jwt.encode(payload, settings.private_key, algorithm=ALGORITHM)
 
@@ -48,5 +47,6 @@ def verify_token(token: str, public_key: str, expected_aud: str | None = None) -
         public_key,
         algorithms=[ALGORITHM],
         audience=expected_aud,
+        issuer="auth-center",
         options=options,
     )
