@@ -953,7 +953,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `POST` | `/admin/login` | 驗證 admin 帳密 | 公開 |
 | `GET` | `/admin/logout` | Admin 登出 | 公開 |
 | `GET` | `/admin/dashboard` | Admin 總覽頁 | Super / App Admin |
-| `POST` | `/admin/generate-register-link` | 產生註冊連結（24hr） | Super / App Admin |
+| `POST` | `/admin/generate-register-link` | 產生註冊連結（24hr） | Super Admin |
 | `GET` | `/admin/apps` | App 管理頁面 | Super Admin |
 | `POST` | `/admin/apps/create` | 新增 App | Super Admin |
 | `POST` | `/admin/apps/update` | 更新 App 存取規則 | Super Admin |

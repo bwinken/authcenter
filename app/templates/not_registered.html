@@ -5,7 +5,13 @@
         <div class="alert alert-success">
             已通知管理員，請等待管理員將註冊連結發送至您的信箱。
             <br><br>
-            若長時間未收到，請聯繫 IT 管理員協助處理。
+            若長時間未收到，請聯繫
+            {% if super_admins %}
+                {% for name in super_admins %}{{ name }}{% if not loop.last %}、{% endif %}{% endfor %}
+            {% else %}
+                AI 系統管理員
+            {% endif %}
+            協助處理。
         </div>
     {% elif error %}
         <div class="alert alert-error">{{ error }}</div>

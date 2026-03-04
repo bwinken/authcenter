@@ -301,6 +301,7 @@ async def request_register_submit(
     # Invalidate token after webhook succeeds
     await service.invalidate_registration_token(sqlite_session, token)
 
+    settings = get_settings()
     return templates.TemplateResponse("not_registered.html", {
         "request": request,
         "employee_name": employee_name,
@@ -308,6 +309,7 @@ async def request_register_submit(
         "login_url": login_url,
         "success": True,
         "error": None,
+        "super_admins": settings.SUPER_ADMIN_EMPLOYEES,
     })
 
 

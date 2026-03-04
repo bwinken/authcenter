@@ -298,7 +298,7 @@ async def generate_register_link(
     取代 CLI 工具，讓管理員在 Dashboard 直接產生連結。
     """
     admin = _verify_admin_cookie(admin_token)
-    if admin is None:
+    if not _require_super(admin):
         return RedirectResponse("/admin/login", status_code=303)
 
     settings = get_settings()

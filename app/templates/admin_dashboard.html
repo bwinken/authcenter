@@ -35,10 +35,12 @@
                 <div class="stat-label">App Admin 指派</div>
             </div>
         {% endif %}
-        <div class="stat-card">
-            <div class="stat-value">{{ pending_registrations | length }}</div>
-            <div class="stat-label">待處理註冊</div>
-        </div>
+        {% if is_super %}
+            <div class="stat-card">
+                <div class="stat-value">{{ pending_registrations | length }}</div>
+                <div class="stat-label">待處理註冊</div>
+            </div>
+        {% endif %}
     </div>
     {% if is_super %}
         <div class="admin-card">
@@ -119,6 +121,7 @@
             {% endif %}
         </div>
     {% endif %}
+    {% if is_super %}
     <div class="admin-card">
         <h2>待處理的註冊請求</h2>
         {% if pending_registrations %}
@@ -167,6 +170,7 @@
             <div class="empty-state">目前沒有待處理的註冊請求。</div>
         {% endif %}
     </div>
+    {% endif %}
     <div style="display: flex; gap: 12px; flex-wrap: wrap;">
         {% if is_super %}
             <a href="/admin/apps"
