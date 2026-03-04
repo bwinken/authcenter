@@ -625,7 +625,7 @@ async def dashboard_page(
     if user is None:
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
-            "error": "請先登入後再查看 Dashboard。",
+            "error": None,
             "staff": None,
             "apps": [],
         })
@@ -648,6 +648,75 @@ async def dashboard_page(
         "staff": staff,
         "apps": accessible,
     })
+
+
+@router.post("/dashboard")
+async def dashboard_login(
+    request: Request,
+    employee_name: str = Form(...),
+    password: str = Form(...),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """Dashboard 登入：驗證身份後設定 Cookie 並顯示 Dashboard。"""
+    employee_name = service.normalize_employee_name(employee_name)
+
+    def _error(msg: str):
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "error": msg,
+            "staff": None,
+            "apps": [],
+        })
+
+    # Rate limit
+    client_ip = _get_client_ip(request)
+    service.record_attempt(client_ip)
+    if not service.check_rate_limit(client_ip):
+        return _error("登入嘗試過於頻繁，請 5 分鐘後再試。")
+
+    # Authenticate
+    staff, error = await service.authenticate(
+        mssql_session, sqlite_session, employee_name, password
+    )
+
+    if error == "needs_registration":
+        reg_token = await service.generate_registration_token(
+            sqlite_session, employee_name, "", ""
+        )
+        return templates.TemplateResponse("not_registered.html", {
+            "request": request,
+            "employee_name": employee_name,
+            "register_url": f"/auth/register-request?token={reg_token}",
+            "login_url": "/auth/dashboard",
+        })
+
+    if error:
+        return _error(error)
+
+    # Issue JWT cookie for dashboard access
+    token = create_token(
+        sub=staff.employee_name,
+        org_id=staff.org_id,
+        scopes=["dashboard"],
+        aud="auth-center-dashboard",
+        expire_hours=12,
+    )
+
+    all_apps = load_registered_apps()
+    accessible = await service.get_user_accessible_apps(sqlite_session, staff, all_apps)
+
+    response = templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "error": None,
+        "staff": staff,
+        "apps": accessible,
+    })
+    response.set_cookie(
+        key="access_token", value=token,
+        httponly=True, samesite="lax", max_age=12 * 3600,
+    )
+    return response
 
 
 # ─── Forgot Password ─────────────────────────────────────────
