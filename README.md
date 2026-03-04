@@ -140,6 +140,10 @@ odbcinst -q -d
 ### Step 2：安裝 Python 依賴
 
 ```bash
+# 使用 uv（推薦）
+uv sync
+
+# 或使用 pip
 pip install -r requirements.txt
 ```
 
@@ -1198,6 +1202,7 @@ auth-center/
 ├── example_app/
 │   └── main.py              # AI App 整合範例（完整可運行）
 ├── generate_keys.py         # 金鑰產生腳本
-├── requirements.txt
+├── pyproject.toml          # 專案設定與依賴管理（uv）
+├── requirements.txt        # 依賴清單（向下相容）
 └── .env.example
 ```
