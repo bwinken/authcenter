@@ -75,4 +75,7 @@
         {% endif %}
     {% endif %}
 {% endblock %}
-{% block links %}<a href="/auth/change-password">修改密碼</a>{% endblock %}
+{% block links %}
+    {% if staff %}<a href="/auth/change-password">修改密碼</a> | {% endif %}
+    <a href="/admin/login">管理員登入</a>
+{% endblock %}
