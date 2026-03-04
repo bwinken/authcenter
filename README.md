@@ -228,9 +228,9 @@ fastapi run app/main.py
 
 ### Step 7：驗證安裝
 
-1. 打開瀏覽器，前往 `http://localhost:8000/admin/login`
-2. 輸入 `.env` 中設定的 `ADMIN_USERNAME` / `ADMIN_PASSWORD`
-3. 成功登入後會看到 Admin Dashboard
+1. 打開瀏覽器，前往 `http://localhost:8000/`（使用者首頁，含服務說明與常用功能導引）
+2. 前往 `http://localhost:8000/admin/login`，輸入 `.env` 中設定的 `ADMIN_USERNAME` / `ADMIN_PASSWORD`
+3. 成功登入後會看到 Admin Dashboard，navbar 最右側有「使用指南」可查閱管理操作說明
 
 ---
 
@@ -697,12 +697,14 @@ apps:
     # ... client_secret, redirect_uri, name ...
     allowed_orgs: ["IT", "RD"]   # 只允許 IT 和 RD 組織，[] = 不限
     default_level: 1             # 組織內使用者預設權限等級（0 = 無預設）
+    token_expire_hours: 24       # JWT Token 有效時間（小時），預設 12
 ```
 
 | 欄位 | 說明 | 預設值 |
 |------|------|--------|
 | `allowed_orgs` | 允許的組織代碼清單，空陣列 `[]` = 不限組織 | `[]` |
 | `default_level` | 組織內使用者的預設權限等級（1/2/3），需搭配 `allowed_orgs` 使用 | `0` |
+| `token_expire_hours` | JWT Token 有效時間（小時），可在 Admin 管理介面調整 | `12` |
 
 **組織預設權限規則**：
 - 當 `allowed_orgs` 非空且 `default_level > 0` 時，該組織的使用者自動擁有預設權限等級（無需在 `user_app_permissions` 中手動設定）
@@ -963,6 +965,13 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 
 ## 10. API 端點參考
 
+### 系統
+
+| 方法 | 路徑 | 說明 |
+|------|------|------|
+| `GET` | `/` | 使用者首頁（服務說明與功能導引） |
+| `GET` | `/health` | Health Check — 回傳 SQLite / MSSQL 連線狀態（200 ok / 503 degraded） |
+
 ### 認證相關 (`/auth`)
 
 | 方法 | 路徑 | 說明 |
@@ -1040,27 +1049,25 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 
 ```json
 {
+  "iss": "auth-center",
   "sub": "kane.beh",
-  "name": "kane.beh",
-  "org_id": "IT",
-  "dept": "IT",
-  "scopes": ["read", "write"],
   "aud": "ai_chat_app",
   "iat": 1709000000,
-  "exp": 1709043200
+  "exp": 1709043200,
+  "org_id": "IT",
+  "scopes": ["read", "write"]
 }
 ```
 
 | 欄位 | 說明 |
 |------|------|
+| `iss` | 簽發者（固定為 `auth-center`） |
 | `sub` | 使用者名稱（employee_name，如 kane.beh） |
-| `name` | 向下相容欄位（= sub） |
-| `org_id` | 組織代碼 |
-| `dept` | 向下相容欄位（= org_id） |
-| `scopes` | 權限範圍清單（由 per-app level 自動映射） |
 | `aud` | 此 Token 預定存取的 App ID，App 端必須驗證此欄位 |
 | `iat` | Token 簽發時間 (Unix timestamp) |
-| `exp` | Token 過期時間（簽發後 12 小時） |
+| `exp` | Token 過期時間（依 App 設定，預設 12 小時） |
+| `org_id` | 組織代碼 |
+| `scopes` | 權限範圍清單（由 per-app level 自動映射） |
 
 > **Admin JWT** 有效期為 2 小時，`aud` 為 `auth-center-admin`，並額外包含 `is_super` 欄位。
 
@@ -1197,8 +1204,12 @@ Level 說明：`1` = Read、`2` = Read + Write、`3` = Full Admin
 | 機制 | 說明 |
 |------|------|
 | **RS256 非對稱簽名** | 私鑰僅 Auth Center 持有，App 端只需公鑰驗證 |
+| **JWT `iss` 驗證** | 簽發時寫入 `iss: "auth-center"`，驗證時檢查 issuer 是否匹配 |
+| **CSRF 保護** | Double Submit Cookie 模式，所有 POST 表單均需 CSRF token（`/auth/token` API 豁免） |
+| **CORS 限制** | `allow_origins` 自動從 `apps.yaml` 的 `redirect_uri` 提取，不再全開 `*` |
+| **密碼強度政策** | 至少 8 字元、含大小寫英文字母及數字、不可與使用者名稱相同 |
 | **bcrypt 密碼雜湊** | 密碼使用 bcrypt 單向雜湊儲存 |
-| **Rate Limiting** | 同一 IP 5 分鐘內最多 10 次登入嘗試，防止暴力破解 |
+| **Rate Limiting** | 同一 IP 5 分鐘內最多 10 次嘗試，涵蓋使用者登入、Admin 登入、Token 交換，含定期記憶體清理 |
 | **防使用者列舉** | 登入失敗一律回傳「使用者名稱或密碼錯誤」，不區分帳號不存在或密碼錯誤 |
 | **防時序攻擊** | 未知用戶仍執行 dummy bcrypt.verify 確保恆定回應時間 |
 | **Redirect URI 驗證** | 嚴格比對 `apps.yaml` 中的設定，防止 Open Redirect |
@@ -1211,7 +1222,10 @@ Level 說明：`1` = Read、`2` = Read + Write、`3` = Full Admin
 | **Admin 常數時間比對** | Super Admin 帳密使用 `hmac.compare_digest` 防止時序攻擊 |
 | **Admin Audit Log** | 所有 admin 操作均記錄（操作者、動作、對象、IP、時間） |
 | **App Admin 隔離** | App Admin 只能管理自己被指定的 App，無法存取其他 App 或系統設定 |
-| **背景清理** | 過期 token 由背景定時任務（每小時）統一清理 |
+| **MSSQL Table 名稱驗證** | `MSSQL_TABLE` 環境變數以 regex 驗證合法 SQL identifier，防止 SQL injection |
+| **SQLite WAL Mode** | 啟動時自動啟用 WAL journal mode，提升多連線並發讀寫效能 |
+| **Health Check** | `GET /health` 檢查 SQLite + MSSQL 連線狀態，供 Load Balancer 探針使用 |
+| **背景清理** | 過期 token + rate limit 記憶體由背景定時任務（每小時）統一清理 |
 
 ---
 
@@ -1223,6 +1237,7 @@ auth-center/
 │   ├── main.py              # FastAPI 入口，啟動時自動建表
 │   ├── config.py            # 環境變數與 apps.yaml 讀取/寫入
 │   ├── database.py          # 雙 DB 連線管理（MSSQL + SQLite）
+│   ├── csrf.py              # CSRF 保護（Double Submit Cookie）
 │   ├── models.py            # SQLAlchemy models
 │   ├── schemas.py           # Pydantic schemas
 │   ├── auth/
