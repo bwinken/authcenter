@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from functools import lru_cache
+from urllib.parse import quote_plus
 
 import yaml
 from dotenv import load_dotenv
@@ -47,8 +48,9 @@ class Settings:
     @property
     def mssql_url(self) -> str:
         driver = self.MSSQL_DRIVER.replace(" ", "+")
+        password = quote_plus(self.MSSQL_PASSWORD)
         return (
-            f"mssql+aioodbc://{self.MSSQL_USER}:{self.MSSQL_PASSWORD}"
+            f"mssql+aioodbc://{self.MSSQL_USER}:{password}"
             f"@{self.MSSQL_HOST}:{self.MSSQL_PORT}/{self.MSSQL_DATABASE}"
             f"?driver={driver}"
         )
