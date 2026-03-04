@@ -472,6 +472,27 @@ async def consume_auth_code(
     return employee_name
 
 
+async def get_pending_registrations(sqlite_session: AsyncSession) -> list[dict]:
+    """查詢所有未過期的 registration_tokens（待處理的註冊請求）。"""
+    result = await sqlite_session.execute(
+        text(
+            "SELECT employee_name, app_id, redirect_uri, expires_at "
+            "FROM registration_tokens WHERE expires_at > :now "
+            "ORDER BY expires_at DESC"
+        ),
+        {"now": time.time()},
+    )
+    return [
+        {
+            "employee_name": r[0],
+            "app_id": r[1],
+            "redirect_uri": r[2],
+            "expires_at": r[3],
+        }
+        for r in result.fetchall()
+    ]
+
+
 async def cleanup_expired_tokens(sqlite_session: AsyncSession) -> None:
     """Remove expired auth codes and registration tokens. Called by background task."""
     result1 = await sqlite_session.execute(

@@ -33,6 +33,9 @@ class Settings:
     # Teams Webhook
     TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
 
+    # HTTP Proxy (for outbound requests like Teams Webhook)
+    HTTP_PROXY: str = os.getenv("HTTP_PROXY", "")
+
     # Server
     AUTH_CENTER_BASE_URL: str = os.getenv("AUTH_CENTER_BASE_URL", "http://localhost:8000")
 

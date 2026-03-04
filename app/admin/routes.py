@@ -275,8 +275,65 @@ async def admin_dashboard(
     if not admin.get("is_super"):
         admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
 
+    # Pending registration requests
+    pending = await service.get_pending_registrations(sqlite_session)
+    if not admin.get("is_super") and admin_apps:
+        pending = [p for p in pending if p["app_id"] in admin_apps]
+
     ctx = _base_ctx(request, admin, "dashboard",
-                    apps=apps, perm_count=perm_count, admin_count=admin_count, admin_apps=admin_apps)
+                    apps=apps, perm_count=perm_count, admin_count=admin_count,
+                    admin_apps=admin_apps, pending_registrations=pending)
+    return templates.TemplateResponse("admin_dashboard.html", ctx)
+
+
+@router.post("/generate-register-link")
+async def generate_register_link(
+    request: Request,
+    employee_name: str = Form(...),
+    admin_token: str | None = Cookie(default=None),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """管理員產生註冊連結（24 小時有效）。
+
+    取代 CLI 工具，讓管理員在 Dashboard 直接產生連結。
+    """
+    admin = _verify_admin_cookie(admin_token)
+    if admin is None:
+        return RedirectResponse("/admin/login", status_code=303)
+
+    settings = get_settings()
+    employee_name = employee_name.strip().lower()
+
+    # Generate 24-hour registration token
+    token = await service.generate_registration_token(
+        sqlite_session, employee_name, app_id="", redirect_uri="", ttl=86400
+    )
+    link = f"{settings.AUTH_CENTER_BASE_URL}/auth/register?token={token}"
+
+    await _log_action(
+        sqlite_session, admin["sub"], "generate_register_link",
+        target=employee_name, details=f"link={link}",
+        ip_address=_get_client_ip(request),
+    )
+
+    templates = _get_templates()
+    # Re-render dashboard with the generated link
+    apps = load_registered_apps()
+    result = await sqlite_session.execute(text("SELECT COUNT(*) FROM user_app_permissions"))
+    perm_count = result.scalar() or 0
+    result = await sqlite_session.execute(text("SELECT COUNT(*) FROM app_admins"))
+    admin_count = result.scalar() or 0
+    admin_apps = []
+    if not admin.get("is_super"):
+        admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
+    pending = await service.get_pending_registrations(sqlite_session)
+    if not admin.get("is_super") and admin_apps:
+        pending = [p for p in pending if p["app_id"] in admin_apps]
+
+    ctx = _base_ctx(request, admin, "dashboard",
+                    apps=apps, perm_count=perm_count, admin_count=admin_count,
+                    admin_apps=admin_apps, pending_registrations=pending)
+    ctx["success"] = f"註冊連結已產生（24 小時有效）：{link}"
     return templates.TemplateResponse("admin_dashboard.html", ctx)
 
 
