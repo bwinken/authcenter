@@ -97,7 +97,7 @@ def load_registered_apps() -> dict[str, dict]:
     apps_file = BASE_DIR / "config" / "apps.yaml"
     mtime = apps_file.stat().st_mtime
     if mtime != _apps_mtime:
-        with open(apps_file) as f:
+        with open(apps_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         _apps_cache = {app["app_id"]: app for app in data.get("apps", [])}
         _apps_mtime = mtime

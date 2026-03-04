@@ -6,11 +6,12 @@ cannot read the cookie value, it cannot forge the matching form field.
 """
 
 import secrets
+from urllib.parse import parse_qs
 
 from fastapi import Request
 from markupsafe import Markup
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response, HTMLResponse
+from starlette.responses import HTMLResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 CSRF_COOKIE = "csrf_token"
 CSRF_FIELD = "_csrf_token"
@@ -38,41 +39,77 @@ def csrf_input(request: Request) -> str:
     return Markup(f'<input type="hidden" name="{CSRF_FIELD}" value="{token}">')
 
 
-class CSRFMiddleware(BaseHTTPMiddleware):
-    """Validate CSRF token on state-changing requests."""
+class CSRFMiddleware:
+    """Pure ASGI middleware — validates CSRF token without consuming the body."""
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
-        # Always ensure a CSRF cookie exists
-        token = _get_or_create_token(request)
-        need_set_cookie = CSRF_COOKIE not in request.cookies
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
 
-        if request.method not in SAFE_METHODS and request.url.path not in EXEMPT_PATHS:
-            # Read token from form body
-            try:
-                form = await request.form()
-                form_token = form.get(CSRF_FIELD, "")
-            except Exception:
-                form_token = ""
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-            cookie_token = request.cookies.get(CSRF_COOKIE, "")
+        request = Request(scope)
+        method = request.method
+        path = request.url.path
 
-            if not cookie_token or not secrets.compare_digest(cookie_token, form_token):
-                return HTMLResponse(
-                    content="<h1>403 Forbidden</h1><p>CSRF token 驗證失敗，請重新整理頁面後再試。</p>",
-                    status_code=403,
-                )
+        # Safe methods and exempt paths skip CSRF check
+        if method in SAFE_METHODS or path in EXEMPT_PATHS:
+            await self._ensure_cookie(scope, receive, send, request)
+            return
 
-        response = await call_next(request)
+        # Collect request body (without consuming it for downstream)
+        body_chunks: list[bytes] = []
+        while True:
+            message = await receive()
+            body_chunks.append(message.get("body", b""))
+            if not message.get("more_body", False):
+                break
+        body = b"".join(body_chunks)
 
-        if need_set_cookie:
-            response.set_cookie(
-                key=CSRF_COOKIE,
-                value=token,
-                httponly=False,  # JS-readable (needed for Double Submit)
-                samesite="lax",
-                max_age=86400,
+        # Parse form data to extract CSRF token
+        content_type = request.headers.get("content-type", "")
+        form_token = ""
+        if "application/x-www-form-urlencoded" in content_type:
+            parsed = parse_qs(body.decode("utf-8", errors="replace"))
+            form_token = parsed.get(CSRF_FIELD, [""])[0]
+
+        cookie_token = request.cookies.get(CSRF_COOKIE, "")
+
+        if not cookie_token or not secrets.compare_digest(cookie_token, form_token):
+            response = HTMLResponse(
+                content="<h1>403 Forbidden</h1><p>CSRF token 驗證失敗，請重新整理頁面後再試。</p>",
+                status_code=403,
             )
+            await response(scope, receive, send)
+            return
 
-        return response
+        # Replay the body for downstream handlers
+        async def replay_receive() -> Message:
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        await self._ensure_cookie(scope, replay_receive, send, request)
+
+    async def _ensure_cookie(
+        self, scope: Scope, receive: Receive, send: Send, request: Request
+    ) -> None:
+        """Wrap send to inject CSRF cookie if not already present."""
+        need_set_cookie = CSRF_COOKIE not in request.cookies
+        token = _get_or_create_token(request)
+
+        if not need_set_cookie:
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_cookie(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                cookie_value = (
+                    f"{CSRF_COOKIE}={token}; Path=/; SameSite=Lax; Max-Age=86400"
+                )
+                headers.append((b"set-cookie", cookie_value.encode()))
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_cookie)
