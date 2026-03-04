@@ -431,11 +431,11 @@ async def list_permissions(
     conditions = []
     params: dict = {}
     if employee_name:
-        conditions.append("employee_name = :ename")
-        params["ename"] = normalize_employee_name(employee_name)
+        conditions.append("employee_name LIKE :ename")
+        params["ename"] = f"%{normalize_employee_name(employee_name)}%"
     if app_id:
-        conditions.append("app_id = :aid")
-        params["aid"] = app_id
+        conditions.append("app_id LIKE :aid")
+        params["aid"] = f"%{app_id}%"
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     result = await sqlite_session.execute(
@@ -453,6 +453,52 @@ async def list_permissions(
         }
         for row in result.fetchall()
     ]
+
+
+# ─── User Account Management ─────────────────────────────────
+
+async def list_users(sqlite_session: AsyncSession) -> list[dict]:
+    """列出所有已註冊帳號。"""
+    result = await sqlite_session.execute(
+        text("SELECT employee_name, created_at, updated_at FROM user_accounts ORDER BY employee_name")
+    )
+    return [
+        {"employee_name": r[0], "created_at": r[1], "updated_at": r[2]}
+        for r in result.fetchall()
+    ]
+
+
+async def admin_reset_password(
+    sqlite_session: AsyncSession, employee_name: str, new_password: str | None = None
+) -> str:
+    """管理員強制重設密碼（不需舊密碼）。回傳新密碼明文。"""
+    employee_name = normalize_employee_name(employee_name)
+    if new_password is None:
+        new_password = secrets.token_urlsafe(12)
+    password_hash = bcrypt.hash(new_password)
+    await sqlite_session.execute(
+        text("UPDATE user_accounts SET password_hash = :hash WHERE employee_name = :ename"),
+        {"hash": password_hash, "ename": employee_name},
+    )
+    await sqlite_session.commit()
+    logger.info("Password reset by admin for %s", employee_name)
+    return new_password
+
+
+async def delete_user(sqlite_session: AsyncSession, employee_name: str) -> bool:
+    """刪除使用者帳號及其所有權限記錄。"""
+    employee_name = normalize_employee_name(employee_name)
+    await sqlite_session.execute(
+        text("DELETE FROM user_app_permissions WHERE employee_name = :ename"),
+        {"ename": employee_name},
+    )
+    result = await sqlite_session.execute(
+        text("DELETE FROM user_accounts WHERE employee_name = :ename"),
+        {"ename": employee_name},
+    )
+    await sqlite_session.commit()
+    logger.info("User deleted by admin: %s (rows=%d)", employee_name, result.rowcount)
+    return result.rowcount > 0
 
 
 async def generate_auth_code(

@@ -301,6 +301,10 @@
                 <a href="/admin/permissions"
                    class="{% if active_nav == 'permissions' %}active{% endif %}">權限管理</a>
                 {% if is_super %}
+                    <a href="/admin/users"
+                       class="{% if active_nav == 'users' %}active{% endif %}">會員管理</a>
+                {% endif %}
+                {% if is_super %}
                     <a href="/admin/admins"
                        class="{% if active_nav == 'admins' %}active{% endif %}">Admin 管理</a>
                 {% endif %}

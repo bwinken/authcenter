@@ -267,6 +267,7 @@ Auth Center 有兩層管理員，各自的權限不同：
 | App 管理（新增/編輯/刪除） | ✓ | ✗ |
 | 使用者權限管理（所有 App） | ✓ | ✗ |
 | 使用者權限管理（自己的 App） | ✓ | ✓ |
+| 會員管理（重設密碼 / 刪除帳號） | ✓ | ✗ |
 | 指定 / 移除 App Admin | ✓ | ✗ |
 | 查看 Audit Log | 全部紀錄 | 僅相關紀錄 |
 
@@ -347,11 +348,34 @@ Dashboard 顯示系統總覽資訊：
 
 **搜尋 / 篩選：**
 
-- 可依「使用者名稱」或「App ID」篩選顯示
+- 可依「使用者名稱」或「App ID」模糊搜尋（支援部分名稱）
 
-#### Step 5：指定 App Admin
+#### Step 5：會員管理
 
-前往「**Admin 管理**」頁面（導覽列 → Admin管理）：
+前往「**會員管理**」頁面（導覽列 → 會員管理）：
+
+此頁面列出所有已註冊的 AuthCenter 帳號，依**組織代碼**分組展開。
+
+**重設密碼：**
+
+1. 展開目標組織，找到使用者
+2. 點擊「重設密碼」
+3. 系統自動產生新密碼並顯示在頁面上（僅顯示一次，請立即複製）
+
+**刪除帳號：**
+
+1. 展開目標組織，找到使用者
+2. 點擊「刪除」→ 確認刪除
+
+> **注意**：刪除帳號會**同時移除**該使用者的所有 App 權限記錄，且無法復原。
+
+**搜尋：**
+
+- 可依使用者名稱搜尋篩選
+
+#### Step 6：指定 App Admin
+
+前往「**Admin 管理**」頁面（導覽列 → Admin 管理）：
 
 1. 在「指定 App Admin」區塊：
    - 輸入**員工名稱**（如 `kane.beh`，該員工必須已在系統註冊）
@@ -366,7 +390,7 @@ Dashboard 顯示系統總覽資訊：
 
 > 同一位員工可以同時管理多個 App（分別指定即可）。
 
-#### Step 6：查看操作紀錄
+#### Step 7：查看操作紀錄
 
 前往「**操作紀錄**」頁面（導覽列 → 操作紀錄）：
 
@@ -383,6 +407,8 @@ Dashboard 顯示系統總覽資訊：
 | `assign_app_admin` | 指定 App Admin |
 | `remove_app_admin` | 移除 App Admin |
 | `generate_register_link` | 產生員工註冊連結 |
+| `reset_password` | 重設使用者密碼 |
+| `delete_user` | 刪除使用者帳號 |
 
 每筆紀錄包含：操作時間、操作者、操作類型、對象、詳情、IP 位址。
 
@@ -971,6 +997,9 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `POST` | `/admin/permissions` | 授予使用者權限 | Super / App Admin |
 | `POST` | `/admin/permissions/revoke` | 撤銷使用者權限 | Super / App Admin |
 | `GET` | `/admin/admins` | App Admin 管理頁面 | Super Admin |
+| `GET` | `/admin/users` | 會員管理頁面 | Super Admin |
+| `POST` | `/admin/users/reset-password` | 重設使用者密碼 | Super Admin |
+| `POST` | `/admin/users/delete` | 刪除使用者帳號 | Super Admin |
 | `POST` | `/admin/admins/assign` | 指定 App Admin | Super Admin |
 | `POST` | `/admin/admins/remove` | 移除 App Admin | Super Admin |
 | `GET` | `/admin/audit-log` | 操作紀錄頁面 | Super / App Admin |

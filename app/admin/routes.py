@@ -821,3 +821,147 @@ async def audit_log_page(
     ctx = _base_ctx(request, admin, "audit",
                     logs=logs, page=page, total_pages=total_pages, total=total)
     return templates.TemplateResponse("admin_audit_log.html", ctx)
+
+
+# ─── User Account Management (Super Admin Only) ──────────────
+
+
+@router.get("/users", response_class=HTMLResponse)
+async def manage_users(
+    request: Request,
+    search: str = "",
+    msg: str = "",
+    err: str = "",
+    admin_token: str | None = Cookie(default=None),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
+):
+    """已註冊會員管理頁面（僅 Super Admin）。
+
+    列出所有已註冊帳號，依組織代碼分組展開。
+    支援以 employee_name 搜尋篩選。
+    """
+    admin = _verify_admin_cookie(admin_token)
+    if not _require_super(admin):
+        return RedirectResponse("/admin/login", status_code=303)
+
+    templates = _get_templates()
+    users = await service.list_users(sqlite_session)
+
+    # Filter by search term
+    if search.strip():
+        term = search.strip().lower()
+        users = [u for u in users if term in u["employee_name"]]
+
+    # Batch query MSSQL for org_id
+    org_map: dict[str, str] = {}
+    if users:
+        table = get_settings().MSSQL_TABLE
+        names = [u["employee_name"] for u in users]
+        # SQLAlchemy doesn't support IN with named params for tuples easily,
+        # use a manual approach with individual params
+        placeholders = ", ".join(f":n{i}" for i in range(len(names)))
+        params = {f"n{i}": name for i, name in enumerate(names)}
+        result = await mssql_session.execute(
+            text(f"SELECT nt_account, org_id FROM {table} WHERE nt_account IN ({placeholders})"),
+            params,
+        )
+        org_map = {r[0]: r[1] for r in result.fetchall()}
+
+    # Attach org_id and group by org
+    for u in users:
+        u["org_id"] = org_map.get(u["employee_name"], "未知")
+
+    # Group by org_id
+    org_groups: dict[str, list[dict]] = {}
+    for u in users:
+        org_groups.setdefault(u["org_id"], []).append(u)
+    # Sort orgs alphabetically
+    org_groups = dict(sorted(org_groups.items()))
+
+    ctx = _base_ctx(request, admin, "users",
+                    org_groups=org_groups, user_count=len(users),
+                    org_count=len(org_groups), search=search,
+                    reset_password=None,
+                    success=msg or None, error=err or None)
+    return templates.TemplateResponse("admin_users.html", ctx)
+
+
+@router.post("/users/reset-password", response_class=HTMLResponse)
+async def reset_user_password(
+    request: Request,
+    employee_name: str = Form(...),
+    admin_token: str | None = Cookie(default=None),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
+):
+    """管理員強制重設使用者密碼（僅 Super Admin）。"""
+    admin = _verify_admin_cookie(admin_token)
+    if not _require_super(admin):
+        return RedirectResponse("/admin/login", status_code=303)
+
+    templates = _get_templates()
+    new_password = await service.admin_reset_password(sqlite_session, employee_name)
+
+    await _log_action(
+        sqlite_session, admin["sub"], "reset_password", target=employee_name,
+        ip_address=_get_client_ip(request),
+    )
+
+    # Re-load users page with password displayed
+    users = await service.list_users(sqlite_session)
+    table = get_settings().MSSQL_TABLE
+    names = [u["employee_name"] for u in users]
+    org_map: dict[str, str] = {}
+    if names:
+        placeholders = ", ".join(f":n{i}" for i in range(len(names)))
+        params = {f"n{i}": name for i, name in enumerate(names)}
+        result = await mssql_session.execute(
+            text(f"SELECT nt_account, org_id FROM {table} WHERE nt_account IN ({placeholders})"),
+            params,
+        )
+        org_map = {r[0]: r[1] for r in result.fetchall()}
+
+    for u in users:
+        u["org_id"] = org_map.get(u["employee_name"], "未知")
+    org_groups: dict[str, list[dict]] = {}
+    for u in users:
+        org_groups.setdefault(u["org_id"], []).append(u)
+    org_groups = dict(sorted(org_groups.items()))
+
+    ctx = _base_ctx(
+        request, admin, "users",
+        org_groups=org_groups, user_count=len(users),
+        org_count=len(org_groups), search="",
+        reset_password={"employee_name": employee_name, "password": new_password},
+        success=f"已重設 {employee_name} 的密碼。",
+    )
+    return templates.TemplateResponse("admin_users.html", ctx)
+
+
+@router.post("/users/delete", response_class=HTMLResponse)
+async def delete_user_account(
+    request: Request,
+    employee_name: str = Form(...),
+    admin_token: str | None = Cookie(default=None),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """刪除使用者帳號及其所有權限（僅 Super Admin）。"""
+    admin = _verify_admin_cookie(admin_token)
+    if not _require_super(admin):
+        return RedirectResponse("/admin/login", status_code=303)
+
+    deleted = await service.delete_user(sqlite_session, employee_name)
+
+    if deleted:
+        await _log_action(
+            sqlite_session, admin["sub"], "delete_user", target=employee_name,
+            ip_address=_get_client_ip(request),
+        )
+
+    from urllib.parse import urlencode
+    if deleted:
+        qs = urlencode({"msg": f"已刪除 {employee_name} 的帳號與權限記錄。"})
+    else:
+        qs = urlencode({"err": f"找不到使用者 {employee_name}"})
+    return RedirectResponse(f"/admin/users?{qs}", status_code=303)

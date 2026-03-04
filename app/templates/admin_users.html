@@ -1,0 +1,160 @@
+{% extends "admin_base.html" %}
+{% block title %}會員管理 - AuthCenter Admin{% endblock %}
+{% block extra_style %}
+    <style>
+    .password-box {
+        background: #fffbeb;
+        border: 1px solid #fcd34d;
+        border-radius: 6px;
+        padding: 14px;
+        margin-bottom: 20px;
+        font-size: 13px;
+    }
+    .password-box strong { color: #92400e; }
+    .password-box code {
+        display: block;
+        margin-top: 8px;
+        padding: 8px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        font-size: 13px;
+        word-break: break-all;
+    }
+    .org-group {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        margin-bottom: 8px;
+    }
+    .org-group summary {
+        cursor: pointer;
+        padding: 12px 16px;
+        font-weight: 600;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .org-group summary:hover { background: #f9fafb; border-radius: 8px; }
+    .org-group summary .org-count {
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--text-muted);
+    }
+    .org-group[open] summary { border-bottom: 1px solid var(--border); border-radius: 8px 8px 0 0; }
+    .org-group .org-content { padding: 0; }
+    .action-forms { display: flex; gap: 6px; }
+    </style>
+{% endblock %}
+{% block content %}
+    <div class="page-header">
+        <h1>會員管理</h1>
+        <p>管理已註冊的 AuthCenter 帳號</p>
+    </div>
+    {% if reset_password %}
+        <div class="password-box">
+            <strong>{{ reset_password.employee_name }} 的新密碼（請立即複製，此後無法再次查看）：</strong>
+            <code>{{ reset_password.password }}</code>
+        </div>
+    {% endif %}
+    <!-- Search -->
+    <div class="admin-card">
+        <h2>搜尋</h2>
+        <form method="GET" action="/admin/users">
+            <div class="form-row">
+                <input type="text"
+                       name="search"
+                       value="{{ search }}"
+                       placeholder="依使用者名稱搜尋">
+                <button type="submit" class="btn btn-primary">搜尋</button>
+                {% if search %}
+                    <a href="/admin/users"
+                       class="btn btn-danger"
+                       style="text-decoration: none; text-align: center;">清除</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+    <!-- Stats -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ user_count }}</div>
+            <div class="stat-label">已註冊帳號</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ org_count }}</div>
+            <div class="stat-label">組織數</div>
+        </div>
+    </div>
+    <!-- User List by Org -->
+    {% if org_groups %}
+        {% for org_id, members in org_groups.items() %}
+            <details class="org-group" {% if org_groups | length == 1 or search %}open{% endif %}>
+                <summary>
+                    <span class="badge badge-blue">{{ org_id }}</span>
+                    <span class="org-count">{{ members | length }} 人</span>
+                </summary>
+                <div class="org-content">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>使用者名稱</th>
+                                <th>建立時間</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in members %}
+                                <tr>
+                                    <td>{{ user.employee_name }}</td>
+                                    <td style="font-size: 12px; color: var(--text-muted);">
+                                        {{ user.created_at or '—' }}
+                                    </td>
+                                    <td>
+                                        <div class="action-forms">
+                                            <form method="POST"
+                                                  action="/admin/users/reset-password"
+                                                  style="display: inline;">
+                                                <input type="hidden"
+                                                       name="employee_name"
+                                                       value="{{ user.employee_name }}">
+                                                <button type="submit"
+                                                        class="btn btn-primary btn-sm"
+                                                        onclick="return confirm('確定要重設 {{ user.employee_name }} 的密碼？')">
+                                                    重設密碼
+                                                </button>
+                                            </form>
+                                            <form method="POST"
+                                                  action="/admin/users/delete"
+                                                  style="display: inline;">
+                                                <input type="hidden"
+                                                       name="employee_name"
+                                                       value="{{ user.employee_name }}">
+                                                <button type="submit"
+                                                        class="btn btn-danger btn-sm"
+                                                        onclick="return confirm('確定要刪除 {{ user.employee_name }}？此操作會同時移除該帳號的所有權限記錄，且無法復原。')">
+                                                    刪除
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        {% endfor %}
+    {% else %}
+        <div class="admin-card">
+            <div class="empty-state">
+                {% if search %}
+                    沒有符合「{{ search }}」的使用者。
+                {% else %}
+                    尚未有任何已註冊帳號。
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+{% endblock %}
