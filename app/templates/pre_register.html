@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}註冊帳號 - AuthCenter{% endblock %}
+{% block content %}
+    <p class="subtitle" style="margin-bottom: 24px;">請輸入您的使用者名稱以開始註冊流程。</p>
+    {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+    <form method="POST" action="/auth/pre-register">
+        <input type="hidden" name="app_id" value="{{ app_id }}">
+        <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+        <div class="form-group">
+            <label for="employee_name">使用者名稱</label>
+            <input type="text"
+                   id="employee_name"
+                   name="employee_name"
+                   placeholder="例如 kane.beh"
+                   required
+                   autofocus>
+        </div>
+        <button type="submit" class="btn btn-primary">下一步</button>
+    </form>
+{% endblock %}
+{% block links %}
+    <a href="/auth/login?app_id={{ app_id }}&redirect_uri={{ redirect_uri }}">返回登入</a>
+{% endblock %}

@@ -26,4 +26,8 @@
         <button type="submit" class="btn btn-primary">登入</button>
     </form>
 {% endblock %}
-{% block links %}<a href="/auth/forgot-password">忘記密碼？</a>{% endblock %}
+{% block links %}
+    <a href="/auth/pre-register?app_id={{ app_id }}&redirect_uri={{ redirect_uri }}">還沒有帳號？點擊註冊</a>
+    &nbsp;|&nbsp;
+    <a href="/auth/forgot-password">忘記密碼？</a>
+{% endblock %}

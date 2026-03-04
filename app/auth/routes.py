@@ -152,6 +152,84 @@ async def login_submit(
     return RedirectResponse(f"{redirect_uri}?code={code}", status_code=303)
 
 
+# ─── Pre-Register (new user entry point) ─────────────────────
+
+@router.get("/pre-register", response_class=HTMLResponse)
+async def pre_register_page(
+    request: Request,
+    app_id: str = Query(""),
+    redirect_uri: str = Query(""),
+):
+    """渲染預註冊頁面。
+
+    新使用者從登入頁面點擊「還沒有帳號」後進入此頁面，
+    輸入使用者名稱後系統檢查是否需要註冊。
+    """
+    return templates.TemplateResponse("pre_register.html", {
+        "request": request,
+        "error": None,
+        "app_id": app_id,
+        "redirect_uri": redirect_uri,
+    })
+
+
+@router.post("/pre-register")
+async def pre_register_submit(
+    request: Request,
+    employee_name: str = Form(...),
+    app_id: str = Form(""),
+    redirect_uri: str = Form(""),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """處理預註冊表單。
+
+    驗證流程：
+    1. 查 MSSQL 確認員工存在
+    2. 查 SQLite 確認帳號尚未註冊
+    3. 產生 registration token，導向身份驗證頁面
+    """
+    employee_name = service.normalize_employee_name(employee_name)
+
+    ctx = {
+        "request": request,
+        "error": None,
+        "app_id": app_id,
+        "redirect_uri": redirect_uri,
+    }
+
+    # Rate limit check
+    client_ip = _get_client_ip(request)
+    service.record_attempt(client_ip)
+    if not service.check_rate_limit(client_ip):
+        ctx["error"] = "請求過於頻繁，請 5 分鐘後再試。"
+        return templates.TemplateResponse("pre_register.html", ctx)
+
+    # Check staff exists in MSSQL
+    staff = await service.verify_staff(mssql_session, employee_name)
+    if staff is None:
+        ctx["error"] = "使用者名稱不存在，請確認輸入是否正確。"
+        return templates.TemplateResponse("pre_register.html", ctx)
+
+    # Check if already registered in SQLite
+    has_account = await service.check_account_exists(sqlite_session, employee_name)
+    if has_account:
+        ctx["error"] = "此帳號已經註冊過了，請返回登入頁面。"
+        return templates.TemplateResponse("pre_register.html", ctx)
+
+    # Generate registration token and redirect to identity verification
+    reg_token = await service.generate_registration_token(
+        sqlite_session, employee_name, app_id, redirect_uri
+    )
+    login_url = f"/auth/login?app_id={app_id}&redirect_uri={redirect_uri}" if app_id else "/auth/dashboard"
+    return templates.TemplateResponse("not_registered.html", {
+        "request": request,
+        "employee_name": employee_name,
+        "register_url": f"/auth/register-request?token={reg_token}",
+        "login_url": login_url,
+    })
+
+
 # ─── Registration Request (identity verification → webhook) ──
 
 @router.get("/register-request", response_class=HTMLResponse)
