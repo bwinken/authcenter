@@ -21,21 +21,75 @@
         font-size: 13px;
         word-break: break-all;
     }
-    .app-edit-form { display: flex; gap: 8px; align-items: center; }
-    .app-edit-form input, .app-edit-form select {
+    .app-edit-form { display: flex; gap: 8px; align-items: flex-start; }
+    .app-edit-form select {
         padding: 6px 10px;
         border: 1px solid var(--border);
         border-radius: 4px;
         font-size: 12px;
         font-family: inherit;
     }
-    .app-edit-form input:focus, .app-edit-form select:focus {
+    .app-edit-form select:focus {
         outline: none;
         border-color: var(--border-focus);
     }
     details summary { cursor: pointer; font-weight: 500; font-size: 13px; color: var(--text-muted); }
     details summary:hover { color: var(--text-main); }
     details[open] summary { margin-bottom: 12px; }
+    /* ── Org Tag Picker ── */
+    .org-tag-picker {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px;
+        min-height: 32px;
+        min-width: 160px;
+        max-width: 260px;
+        padding: 3px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: #fff;
+    }
+    .org-tag-picker:focus-within { border-color: var(--border-focus); }
+    .org-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        background: #dbeafe;
+        color: #1e40af;
+        font-size: 11px;
+        font-weight: 500;
+        padding: 2px 6px;
+        border-radius: 3px;
+        white-space: nowrap;
+    }
+    .org-tag-remove {
+        background: none;
+        border: none;
+        padding: 0;
+        margin: 0;
+        cursor: pointer;
+        color: #1e40af;
+        font-size: 13px;
+        line-height: 1;
+        font-weight: 700;
+    }
+    .org-tag-remove:hover { color: #ef4444; }
+    .org-add-select {
+        border: none;
+        outline: none;
+        background: transparent;
+        font-size: 11px;
+        font-family: inherit;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 2px 0;
+    }
+    .org-empty-hint {
+        font-size: 11px;
+        color: var(--text-muted);
+        pointer-events: none;
+    }
     </style>
 {% endblock %}
 {% block content %}
@@ -73,12 +127,36 @@
                             <td colspan="2">
                                 <form method="POST" action="/admin/apps/update" class="app-edit-form">
                                     <input type="hidden" name="app_id" value="{{ aid }}">
-                                    <input type="text"
+                                    <input type="hidden"
                                            name="allowed_orgs"
-                                           value="{{ info.get('allowed_orgs', []) | join(', ') }}"
-                                           placeholder="全部（留空）"
-                                           style="width: 130px"
-                                           title="以逗號分隔，如：IT, FIN, RD">
+                                           id="hidden_orgs_{{ aid }}"
+                                           value="{{ info.get('allowed_orgs', []) | join(',') }}">
+                                    <div class="org-tag-picker" id="picker_{{ aid }}">
+                                        {% for org in info.get('allowed_orgs', []) %}
+                                            <span class="org-tag" data-org="{{ org }}">
+                                                {{ org }}
+                                                <button type="button"
+                                                        class="org-tag-remove"
+                                                        onclick="removeOrg('{{ aid }}', '{{ org }}')"
+                                                        title="移除 {{ org }}">&times;</button>
+                                            </span>
+                                        {% endfor %}
+                                        <span class="org-empty-hint"
+                                              id="hint_{{ aid }}"
+                                              {% if info.get('allowed_orgs') %}style="display:none"{% endif %}>全部（留空）</span>
+                                        <select class="org-add-select"
+                                                id="addsel_{{ aid }}"
+                                                onchange="addOrg('{{ aid }}', this)">
+                                            <option value="">+ 新增</option>
+                                            {% for org in available_orgs %}
+                                                <option value="{{ org }}"
+                                                        {% if org in info.get('allowed_orgs', []) %}disabled{% endif %}>{{ org }}</option>
+                                            {% endfor %}
+                                            {% if not available_orgs %}
+                                                <option value="" disabled>（無法載入組織清單）</option>
+                                            {% endif %}
+                                        </select>
+                                    </div>
                                     <select name="default_level"
                                             style="width: 120px"
                                             title="組織內使用者的預設權限等級（需設定允許組織才生效）">
@@ -135,4 +213,57 @@
             <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Client Secret 將自動產生，新增後顯示一次。</p>
         </form>
     </div>
+    <script>
+    function removeOrg(appId, org) {
+        var picker = document.getElementById('picker_' + appId);
+        var hidden = document.getElementById('hidden_orgs_' + appId);
+        var hint = document.getElementById('hint_' + appId);
+        var sel = document.getElementById('addsel_' + appId);
+
+        var tag = picker.querySelector('[data-org="' + org + '"]');
+        if (tag) tag.remove();
+
+        var current = hidden.value ? hidden.value.split(',').filter(Boolean) : [];
+        var updated = current.filter(function(o) { return o !== org; });
+        hidden.value = updated.join(',');
+
+        var opt = sel.querySelector('option[value="' + org + '"]');
+        if (opt) opt.disabled = false;
+
+        if (updated.length === 0) hint.style.display = '';
+    }
+
+    function addOrg(appId, selectEl) {
+        var org = selectEl.value;
+        if (!org) return;
+
+        var picker = document.getElementById('picker_' + appId);
+        var hidden = document.getElementById('hidden_orgs_' + appId);
+        var hint = document.getElementById('hint_' + appId);
+
+        var current = hidden.value ? hidden.value.split(',').filter(Boolean) : [];
+        if (current.indexOf(org) !== -1) {
+            selectEl.value = '';
+            return;
+        }
+
+        var tag = document.createElement('span');
+        tag.className = 'org-tag';
+        tag.setAttribute('data-org', org);
+        tag.innerHTML = org +
+            ' <button type="button" class="org-tag-remove"' +
+            ' onclick="removeOrg(\'' + appId + '\', \'' + org + '\')"' +
+            ' title="移除 ' + org + '">&times;</button>';
+        picker.insertBefore(tag, selectEl);
+
+        current.push(org);
+        hidden.value = current.join(',');
+
+        var opt = selectEl.querySelector('option[value="' + org + '"]');
+        if (opt) opt.disabled = true;
+
+        hint.style.display = 'none';
+        selectEl.value = '';
+    }
+    </script>
 {% endblock %}

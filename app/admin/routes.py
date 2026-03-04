@@ -103,6 +103,18 @@ async def _list_app_admins(sqlite_session: AsyncSession, app_id: str | None = No
     ]
 
 
+async def _fetch_available_orgs(mssql_session: AsyncSession) -> list[str]:
+    """從 MSSQL 取得所有不重複的 org_id，供 App 管理頁面選擇。"""
+    try:
+        table = get_settings().MSSQL_TABLE
+        result = await mssql_session.execute(
+            text(f"SELECT DISTINCT org_id FROM {table} WHERE org_id IS NOT NULL ORDER BY org_id")
+        )
+        return [row[0] for row in result.fetchall()]
+    except Exception:
+        return []
+
+
 # ─── Shared template context ──────────────────────────────────
 
 def _base_ctx(request: Request, admin: dict, active_nav: str, **kwargs) -> dict:
@@ -342,6 +354,7 @@ async def generate_register_link(
 async def apps_page(
     request: Request,
     admin_token: str | None = Cookie(default=None),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
 ):
     """App 管理頁面（僅 Super Admin）。
 
@@ -353,7 +366,8 @@ async def apps_page(
 
     templates = _get_templates()
     apps = load_registered_apps()
-    ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None)
+    available_orgs = await _fetch_available_orgs(mssql_session)
+    ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs)
     return templates.TemplateResponse("admin_apps.html", ctx)
 
 
@@ -365,6 +379,7 @@ async def update_app(
     default_level: int = Form(default=0),
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
 ):
     """更新 App 的存取規則（僅 Super Admin）。
 
@@ -377,9 +392,10 @@ async def update_app(
 
     templates = _get_templates()
     apps = load_registered_apps()
+    available_orgs = await _fetch_available_orgs(mssql_session)
 
     if app_id not in apps:
-        ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, error=f"App '{app_id}' 不存在。")
+        ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs, error=f"App '{app_id}' 不存在。")
         return templates.TemplateResponse("admin_apps.html", ctx)
 
     # Parse allowed_orgs (comma-separated)
@@ -398,7 +414,7 @@ async def update_app(
     )
 
     apps = load_registered_apps()
-    ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None,
+    ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs,
                     success=f"已更新 {apps[app_id].get('name', app_id)} 的存取規則。")
     return templates.TemplateResponse("admin_apps.html", ctx)
 
@@ -411,6 +427,7 @@ async def create_app(
     new_redirect_uri: str = Form(...),
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
 ):
     """新增 App 到 apps.yaml（僅 Super Admin）。
 
@@ -423,14 +440,15 @@ async def create_app(
 
     templates = _get_templates()
     apps = load_registered_apps()
+    available_orgs = await _fetch_available_orgs(mssql_session)
 
     new_app_id = new_app_id.strip().lower()
     if not new_app_id:
-        ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, error="App ID 不可為空。")
+        ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs, error="App ID 不可為空。")
         return templates.TemplateResponse("admin_apps.html", ctx)
 
     if new_app_id in apps:
-        ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, error=f"App ID '{new_app_id}' 已存在。")
+        ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs, error=f"App ID '{new_app_id}' 已存在。")
         return templates.TemplateResponse("admin_apps.html", ctx)
 
     # Generate client_secret
@@ -456,6 +474,7 @@ async def create_app(
     apps = load_registered_apps()
     ctx = _base_ctx(request, admin, "apps", apps=apps,
                     new_secret={"app_id": new_app_id, "secret": plain_secret},
+                    available_orgs=available_orgs,
                     success=f"已新增 App：{new_app_name.strip()}")
     return templates.TemplateResponse("admin_apps.html", ctx)
 
@@ -466,6 +485,7 @@ async def delete_app(
     app_id: str = Form(...),
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
 ):
     """從 apps.yaml 中刪除 App（僅 Super Admin）。
 
@@ -477,9 +497,10 @@ async def delete_app(
 
     templates = _get_templates()
     apps = load_registered_apps()
+    available_orgs = await _fetch_available_orgs(mssql_session)
 
     if app_id not in apps:
-        ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, error=f"App '{app_id}' 不存在。")
+        ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs, error=f"App '{app_id}' 不存在。")
         return templates.TemplateResponse("admin_apps.html", ctx)
 
     app_name = apps[app_id].get("name", app_id)
@@ -493,7 +514,7 @@ async def delete_app(
     )
 
     apps = load_registered_apps()
-    ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None,
+    ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs,
                     success=f"已刪除 App：{app_name}")
     return templates.TemplateResponse("admin_apps.html", ctx)
 

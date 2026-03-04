@@ -309,7 +309,6 @@ Dashboard 顯示系統總覽資訊：
    - **App ID**：唯一識別碼（小寫英文 + 底線，如 `ai_chat_app`）
    - **名稱**：顯示名稱（如 `AI Chat Assistant`）
    - **Redirect URI**：App 的 callback URL（如 `http://localhost:8001/auth/callback`）
-   - **允許組織**：留空表示不限，多個組織用逗號分隔（如 `IT,RD`）
 2. 點擊「新增」
 3. 系統會自動產生 `client_secret`，**此密碼只會顯示一次**，請立即複製保存
 4. 將 `client_secret` 交給 App 開發者，存放在 App 的 `.env` 中
@@ -317,8 +316,9 @@ Dashboard 顯示系統總覽資訊：
 **編輯 App 存取規則：**
 
 1. 在 App 列表中找到目標 App
-2. 修改「允許組織」
-3. 點擊「更新」
+2. 透過「允許組織」的下拉選單逐一選取組織代碼（從 IT Master DB 自動載入可用組織），已選的組織會以標籤顯示，點擊 × 可移除；留空表示不限組織
+3. 設定「預設權限」等級（需先設定允許組織才生效）
+4. 點擊「儲存」
 
 **刪除 App：**
 
