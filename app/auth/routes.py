@@ -373,8 +373,7 @@ async def register_submit(
         params = urlencode({"app_id": app_id, "redirect_uri": redirect_uri})
         return RedirectResponse(f"/auth/login?{params}", status_code=303)
 
-    ctx["success"] = True
-    return templates.TemplateResponse("register.html", ctx)
+    return RedirectResponse("/auth/dashboard", status_code=303)
 
 
 # ─── Token Exchange ───────────────────────────────────────────
