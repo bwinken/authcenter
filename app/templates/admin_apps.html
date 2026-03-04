@@ -59,6 +59,7 @@
                         <th>App ID</th>
                         <th>名稱</th>
                         <th>允許組織</th>
+                        <th>預設權限</th>
                         <th>操作</th>
                     </tr>
                 </thead>
@@ -69,7 +70,7 @@
                                 <code style="font-size: 12px;">{{ aid }}</code>
                             </td>
                             <td>{{ info.get('name', aid) }}</td>
-                            <td>
+                            <td colspan="2">
                                 <form method="POST" action="/admin/apps/update" class="app-edit-form">
                                     <input type="hidden" name="app_id" value="{{ aid }}">
                                     <input type="text"
@@ -78,6 +79,14 @@
                                            placeholder="全部（留空）"
                                            style="width: 130px"
                                            title="以逗號分隔，如：IT, FIN, RD">
+                                    <select name="default_level"
+                                            style="width: 120px"
+                                            title="組織內使用者的預設權限等級（需設定允許組織才生效）">
+                                        <option value="0" {% if info.get('default_level', 0) == 0 %}selected{% endif %}>無</option>
+                                        <option value="1" {% if info.get('default_level', 0) == 1 %}selected{% endif %}>Level 1 (Read)</option>
+                                        <option value="2" {% if info.get('default_level', 0) == 2 %}selected{% endif %}>Level 2 (R+W)</option>
+                                        <option value="3" {% if info.get('default_level', 0) == 3 %}selected{% endif %}>Level 3 (Admin)</option>
+                                    </select>
                                     <button type="submit" class="btn btn-primary btn-sm">儲存</button>
                                 </form>
                             </td>

@@ -261,6 +261,20 @@ def _check_org_access(staff: StaffInfo, app_info: dict) -> tuple[bool, str]:
     return True, ""
 
 
+def _get_org_default_level(staff: StaffInfo, app_info: dict) -> int:
+    """取得使用者因組織而獲得的預設權限等級。回傳 0 表示無預設權限。
+
+    只在 allowed_orgs 非空且 default_level > 0 時生效。
+    """
+    allowed_orgs = app_info.get("allowed_orgs") or []
+    default_level = app_info.get("default_level", 0) or 0
+    if not allowed_orgs or not default_level:
+        return 0
+    if staff.org_id in allowed_orgs:
+        return default_level
+    return 0
+
+
 async def get_user_app_level(
     sqlite_session: AsyncSession, employee_name: str, app_id: str
 ) -> int | None:
@@ -284,9 +298,9 @@ async def check_app_access(
 ) -> tuple[bool, str, list[str]]:
     """Check if staff has permission to access the given app.
 
-    Access requires:
-    1. Organization check (allowed_orgs in apps.yaml)
-    2. Explicit per-user permission in user_app_permissions (no permission = denied)
+    Access logic:
+    1. Organization filter (allowed_orgs in apps.yaml) — org not in list → denied
+    2. Personal level 優先：有記錄就用 personal（包括 0=明確拒絕），無記錄 fallback org default
 
     Returns (allowed, reason, scopes).
     """
@@ -301,17 +315,23 @@ async def check_app_access(
         )
         return False, reason, []
 
-    # 2. Check per-user permission (required — no permission = denied)
-    level = await get_user_app_level(sqlite_session, staff.employee_name, app_id)
-    if level is None:
+    # 2. Personal level 優先（None = 無記錄，0 = 明確拒絕）
+    personal_level = await get_user_app_level(sqlite_session, staff.employee_name, app_id)
+
+    if personal_level is not None:
+        effective_level = personal_level
+    else:
+        effective_level = _get_org_default_level(staff, app_info)
+
+    if effective_level <= 0:
         logger.warning(
-            "App access denied: %s has no permission for %s",
-            staff.employee_name, app_id,
+            "App access denied: %s has no permission for %s (personal=%s, org_default=%d)",
+            staff.employee_name, app_id, personal_level, _get_org_default_level(staff, app_info),
         )
         return False, "您尚未被授權存取此應用程式，請聯繫管理員。", []
 
-    scopes = level_to_scopes(level)
-    logger.info("Per-user permission found: %s → %s level=%d scopes=%s", staff.employee_name, app_id, level, scopes)
+    scopes = level_to_scopes(effective_level)
+    logger.info("App access granted: %s → %s effective_level=%d scopes=%s", staff.employee_name, app_id, effective_level, scopes)
     return True, "", scopes
 
 
@@ -322,13 +342,16 @@ async def get_user_accessible_apps(
     staff: StaffInfo,
     all_apps: dict[str, dict],
 ) -> list[dict]:
-    """Get all apps accessible by a user (based on per-user permissions + org check).
+    """Get all apps accessible by a user.
+
+    Merges per-user permissions with org-based default level.
+    Personal level 優先：有記錄用 personal（0=拒絕），無記錄 fallback org default。
 
     Returns list of dicts: [{app_id, name, level, scopes, redirect_uri}]
     """
     employee_name = normalize_employee_name(staff.employee_name)
 
-    # Fetch all personal permissions
+    # Fetch all personal permissions (key exists with value=0 means explicit deny)
     result = await sqlite_session.execute(
         text("SELECT app_id, level FROM user_app_permissions WHERE employee_name = :ename"),
         {"ename": employee_name},
@@ -337,22 +360,25 @@ async def get_user_accessible_apps(
 
     accessible = []
     for app_id, app_info in all_apps.items():
-        # Must have per-user permission
-        if app_id not in personal_perms:
-            continue
-
         # Must pass org check
         allowed, _ = _check_org_access(staff, app_info)
         if not allowed:
             continue
 
-        level = personal_perms[app_id]
+        if app_id in personal_perms:
+            effective_level = personal_perms[app_id]
+        else:
+            effective_level = _get_org_default_level(staff, app_info)
+
+        if effective_level <= 0:
+            continue
+
         accessible.append({
             "app_id": app_id,
             "name": app_info.get("name", app_id),
             "redirect_uri": app_info.get("redirect_uri", ""),
-            "level": level,
-            "scopes": level_to_scopes(level),
+            "level": effective_level,
+            "scopes": level_to_scopes(effective_level),
         })
 
     return accessible

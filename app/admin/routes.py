@@ -370,12 +370,13 @@ async def update_app(
     request: Request,
     app_id: str = Form(...),
     allowed_orgs: str = Form(default=""),
+    default_level: int = Form(default=0),
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """更新 App 的存取規則（僅 Super Admin）。
 
-    可修改 allowed_orgs（逗號分隔的組織代碼）。
+    可修改 allowed_orgs（逗號分隔的組織代碼）及 default_level（組織預設權限等級）。
     變更會寫回 config/apps.yaml 並記錄至 audit log。
     """
     admin = _verify_admin_cookie(admin_token)
@@ -393,12 +394,14 @@ async def update_app(
     orgs = [d.strip() for d in allowed_orgs.split(",") if d.strip()] if allowed_orgs.strip() else []
 
     old_orgs = apps[app_id].get("allowed_orgs", [])
+    old_default_level = apps[app_id].get("default_level", 0)
     apps[app_id]["allowed_orgs"] = orgs
+    apps[app_id]["default_level"] = default_level
     save_registered_apps(apps)
 
     await _log_action(
         sqlite_session, admin["sub"], "update_app", target=app_id,
-        details=f"allowed_orgs: {old_orgs}→{orgs}",
+        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}",
         ip_address=_get_client_ip(request),
     )
 
@@ -448,6 +451,7 @@ async def create_app(
         "redirect_uri": new_redirect_uri.strip(),
         "name": new_app_name.strip(),
         "allowed_orgs": [],
+        "default_level": 0,
     }
     save_registered_apps(apps)
 
