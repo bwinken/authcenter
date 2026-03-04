@@ -163,7 +163,7 @@ async def admin_login_submit(
             aud="auth-center-admin",
             expire_hours=ADMIN_TOKEN_HOURS,
         )
-        await _log_action(sqlite_session, username, "login", target="super_admin", ip_address=_get_client_ip(request))
+        await _log_action(sqlite_session, username, "login", target="super_admin")
         response = RedirectResponse("/admin/dashboard", status_code=303)
         response.set_cookie(
             key="admin_token", value=token,
@@ -193,7 +193,7 @@ async def admin_login_submit(
             aud="auth-center-admin",
             expire_hours=ADMIN_TOKEN_HOURS,
         )
-        await _log_action(sqlite_session, staff.employee_name, "login", target="super_admin(employee)", ip_address=_get_client_ip(request))
+        await _log_action(sqlite_session, staff.employee_name, "login", target="super_admin(employee)")
         response = RedirectResponse("/admin/dashboard", status_code=303)
         response.set_cookie(
             key="admin_token", value=token,
@@ -215,7 +215,7 @@ async def admin_login_submit(
         aud="auth-center-admin",
         expire_hours=ADMIN_TOKEN_HOURS,
     )
-    await _log_action(sqlite_session, staff.employee_name, "login", target="app_admin", details=f"apps={admin_apps}", ip_address=_get_client_ip(request))
+    await _log_action(sqlite_session, staff.employee_name, "login", target="app_admin", details=f"apps={admin_apps}")
     response = RedirectResponse("/admin/dashboard", status_code=303)
     response.set_cookie(
         key="admin_token", value=token,
@@ -594,7 +594,7 @@ async def grant_permission(
     await service.set_user_level(sqlite_session, employee_name, app_id, level, admin_name)
     await _log_action(
         sqlite_session, admin_name, "set_user_level", target=f"{employee_name}→{app_id}",
-        details=f"level={level}", ip_address=_get_client_ip(request),
+        details=f"level={level}",
     )
 
     return RedirectResponse("/admin/permissions", status_code=303)
