@@ -1,7 +1,6 @@
 """Admin routes for Auth Center management (Super Admin + App Admin)."""
 
 import hmac
-import logging
 import secrets
 
 import jwt
@@ -15,9 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings, load_registered_apps, save_registered_apps
 from app.database import get_sqlite_session, get_mssql_session
 from app.auth import service
+from loguru import logger
 from app.auth.jwt_handler import create_token, verify_token
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

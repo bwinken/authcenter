@@ -2,12 +2,14 @@
 
 import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
+from loguru import logger
 from sqlalchemy import text
 
 from app.database import sqlite_engine, mssql_engine, SQLiteSessionLocal
@@ -15,7 +17,53 @@ from app.auth.routes import router as auth_router, init_templates
 from app.admin.routes import router as admin_router
 from app.auth.service import cleanup_expired_tokens
 
-logger = logging.getLogger(__name__)
+
+# ─── Loguru Setup ─────────────────────────────────────────────
+
+class _InterceptHandler(logging.Handler):
+    """Redirect stdlib logging to loguru."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        frame, depth = logging.currentframe(), 2
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+
+def _setup_logging() -> None:
+    """Configure loguru sinks and intercept stdlib logging."""
+    logger.remove()
+
+    # Console sink (colorized)
+    logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        level="DEBUG",
+        colorize=True,
+    )
+
+    # File sink (rotation + retention)
+    logs_dir = Path(__file__).resolve().parent.parent / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    logger.add(
+        str(logs_dir / "auth-center.log"),
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+        level="DEBUG",
+        rotation="10 MB",
+        retention="7 days",
+        encoding="utf-8",
+    )
+
+    # Intercept stdlib logging (uvicorn, sqlalchemy, etc.)
+    logging.basicConfig(handlers=[_InterceptHandler()], level=0, force=True)
+
+
+_setup_logging()
 
 CLEANUP_INTERVAL = 3600  # Run cleanup every hour
 

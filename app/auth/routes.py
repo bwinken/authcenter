@@ -1,6 +1,5 @@
 """Auth Center API routes."""
 
-import logging
 from urllib.parse import urlencode
 
 import jwt
@@ -16,9 +15,8 @@ from app.database import get_mssql_session, get_sqlite_session
 from app.auth import service
 from app.auth.jwt_handler import create_token, verify_token
 from app.schemas import TokenRequest, ForgotPasswordRequest
+from loguru import logger
 from app.webhook.teams import send_forgot_password_notification, send_registration_request_notification
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 templates: Jinja2Templates | None = None

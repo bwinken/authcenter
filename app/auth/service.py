@@ -1,6 +1,5 @@
 """Core authentication business logic."""
 
-import logging
 import secrets
 import time
 from collections import defaultdict
@@ -9,11 +8,11 @@ from passlib.hash import bcrypt
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from loguru import logger
+
 from app.config import get_settings
 from app.models import UserAccount
 from app.schemas import StaffInfo
-
-logger = logging.getLogger(__name__)
 
 AUTH_CODE_TTL = 300  # 5 minutes
 
