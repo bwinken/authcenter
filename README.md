@@ -184,6 +184,8 @@ PUBLIC_KEY_PATH=D:/project/auth-center/keys/public.pem
 
 # Teams Webhook（可選）
 TEAMS_WEBHOOK_URL=https://your-org.webhook.office.com/webhookb2/xxx
+# HTTP Proxy（內網環境需透過 Proxy 連外網時設定）
+# HTTP_PROXY=http://proxy.company.com:8080
 
 # Auth Center 對外 URL
 AUTH_CENTER_BASE_URL=http://localhost:8000
@@ -247,6 +249,7 @@ fastapi run app/main.py
 | `PRIVATE_KEY_PATH` | RS256 私鑰路徑 | `./keys/private.pem` | * |
 | `PUBLIC_KEY_PATH` | RS256 公鑰路徑 | `./keys/public.pem` | * |
 | `TEAMS_WEBHOOK_URL` | Microsoft Teams Webhook URL | — | |
+| `HTTP_PROXY` | HTTP Proxy（內網環境透過 Proxy 發送 Webhook） | — | |
 | `AUTH_CENTER_BASE_URL` | Auth Center 對外 URL | `http://localhost:8000` | |
 | `ADMIN_USERNAME` | Super Admin 帳號 | `admin` | * |
 | `ADMIN_PASSWORD` | Super Admin 密碼 | — | * |
@@ -291,7 +294,9 @@ Dashboard 顯示系統總覽資訊：
 - **已註冊 App 數量**：目前有多少 AI App 接入
 - **個人權限數量**：已設定的 per-user-per-app 權限總數
 - **App Admin 數量**：已指定的 App Admin 人數
+- **待處理註冊數量**：尚未完成註冊的員工請求
 - **App 列表**：每個 App 的名稱、存取規則、個人權限數
+- **待處理的註冊請求**：列出所有未過期的註冊請求，可直接點擊「產生註冊連結」按鈕產生 24 小時有效的註冊連結（取代 CLI 工具）
 
 #### Step 3：管理 App（新增 / 編輯 / 刪除）
 
@@ -377,6 +382,7 @@ Dashboard 顯示系統總覽資訊：
 | `delete_app` | 刪除 App |
 | `assign_app_admin` | 指定 App Admin |
 | `remove_app_admin` | 移除 App Admin |
+| `generate_register_link` | 產生員工註冊連結 |
 
 每筆紀錄包含：操作時間、操作者、操作類型、對象、詳情、IP 位址。
 
@@ -947,6 +953,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `POST` | `/admin/login` | 驗證 admin 帳密 | 公開 |
 | `GET` | `/admin/logout` | Admin 登出 | 公開 |
 | `GET` | `/admin/dashboard` | Admin 總覽頁 | Super / App Admin |
+| `POST` | `/admin/generate-register-link` | 產生註冊連結（24hr） | Super / App Admin |
 | `GET` | `/admin/apps` | App 管理頁面 | Super Admin |
 | `POST` | `/admin/apps/create` | 新增 App | Super Admin |
 | `POST` | `/admin/apps/update` | 更新 App 存取規則 | Super Admin |
