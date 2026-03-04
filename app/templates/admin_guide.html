@@ -1,0 +1,208 @@
+{% extends "admin_base.html" %}
+{% block title %}使用指南 - AuthCenter Admin{% endblock %}
+{% block extra_style %}
+    <style>
+    .guide-section { margin-bottom: 0; }
+    .guide-section h3 {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .guide-section h3 svg {
+        width: 16px;
+        height: 16px;
+        fill: var(--primary);
+    }
+    .guide-section p, .guide-section li {
+        font-size: 13px;
+        line-height: 1.7;
+        color: var(--text-muted);
+    }
+    .guide-section ul {
+        margin: 8px 0;
+        padding-left: 20px;
+    }
+    .guide-section li { margin-bottom: 4px; }
+    .guide-section code {
+        background: #f3f4f6;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 12px;
+    }
+    .guide-tip {
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 13px;
+        color: #166534;
+        margin-top: 12px;
+        line-height: 1.5;
+    }
+    .guide-warn {
+        background: #fffbeb;
+        border: 1px solid #fcd34d;
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 13px;
+        color: #92400e;
+        margin-top: 12px;
+        line-height: 1.5;
+    }
+    .level-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        margin: 12px 0;
+    }
+    .level-table th {
+        text-align: left;
+        padding: 8px 10px;
+        background: #f9fafb;
+        border: 1px solid var(--border);
+        font-weight: 600;
+        font-size: 12px;
+        color: var(--text-muted);
+    }
+    .level-table td {
+        padding: 8px 10px;
+        border: 1px solid #e5e7eb;
+    }
+    </style>
+{% endblock %}
+{% block content %}
+    <div class="page-header">
+        <h1>使用指南</h1>
+        <p>AuthCenter 管理後台操作說明{% if not is_super %}（App Admin 版本）{% endif %}</p>
+    </div>
+
+    {% if is_super %}
+    <!-- App 管理 -->
+    <div class="admin-card guide-section">
+        <h3>
+            <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clip-rule="evenodd"/></svg>
+            App 管理
+        </h3>
+        <p>在「App 管理」頁面可以新增、修改和刪除已註冊的 AI 應用程式。</p>
+        <ul>
+            <li><strong>新增 App</strong>：填入 App ID、名稱、Redirect URI，系統會自動產生 <code>client_secret</code>（僅顯示一次，請立即複製）</li>
+            <li><strong>允許組織</strong>：指定哪些組織的員工可以存取此 App，留空表示不限制</li>
+            <li><strong>預設權限</strong>：當允許組織非空時，組織內的員工自動擁有此預設權限等級（無需逐一授權）</li>
+            <li><strong>Token 有效時間</strong>：設定使用者登入後取得的 JWT Token 有效小時數（1-720 小時，預設 12）</li>
+            <li><strong>刪除 App</strong>：刪除後該 App 的 OAuth 流程將失效，但已存在的使用者權限記錄不會自動刪除</li>
+        </ul>
+        <div class="guide-warn">新增 App 後產生的 Client Secret 僅顯示一次，請務必複製後安全保管。如果遺失，需要刪除 App 後重新建立。</div>
+    </div>
+    {% endif %}
+
+    <!-- 權限管理 -->
+    <div class="admin-card guide-section">
+        <h3>
+            <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+            權限管理
+        </h3>
+        <p>每個使用者需要被明確授權才能存取特定的 App。權限分為三個等級：</p>
+        <table class="level-table">
+            <thead>
+                <tr>
+                    <th>Level</th>
+                    <th>名稱</th>
+                    <th>Scopes</th>
+                    <th>說明</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>1</strong></td>
+                    <td>Read</td>
+                    <td><code>read</code></td>
+                    <td>僅可查看資料</td>
+                </tr>
+                <tr>
+                    <td><strong>2</strong></td>
+                    <td>Read + Write</td>
+                    <td><code>read, write</code></td>
+                    <td>可查看及修改資料</td>
+                </tr>
+                <tr>
+                    <td><strong>3</strong></td>
+                    <td>Admin</td>
+                    <td><code>read, write, admin</code></td>
+                    <td>完整權限，含 App 內部管理功能</td>
+                </tr>
+            </tbody>
+        </table>
+        <ul>
+            <li><strong>授權</strong>：選擇使用者、App 和等級後點擊「授權」即可</li>
+            <li><strong>撤銷</strong>：在權限列表中點擊對應的「撤銷」按鈕</li>
+            <li><strong>搜尋</strong>：可依使用者名稱或 App ID 模糊搜尋（支援部分匹配）</li>
+        </ul>
+        <div class="guide-tip">個人權限優先於組織預設權限。如果使用者同時有個人授權和組織預設權限，以個人授權為準。</div>
+    </div>
+
+    {% if is_super %}
+    <!-- 使用者管理 -->
+    <div class="admin-card guide-section">
+        <h3>
+            <svg viewBox="0 0 20 20"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
+            使用者管理
+        </h3>
+        <p>在「會員管理」頁面可以查看所有已註冊的使用者帳號。</p>
+        <ul>
+            <li><strong>重設密碼</strong>：系統會產生隨機新密碼，請複製後轉交給使用者</li>
+            <li><strong>刪除帳號</strong>：將同時刪除該使用者的帳號和所有 App 權限記錄（不可復原）</li>
+        </ul>
+    </div>
+
+    <!-- App Admin 指派 -->
+    <div class="admin-card guide-section">
+        <h3>
+            <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z" clip-rule="evenodd"/></svg>
+            App Admin 指派
+        </h3>
+        <p>你可以指派員工為特定 App 的管理員（App Admin），讓他們協助管理該 App 的使用者權限。</p>
+        <ul>
+            <li><strong>App Admin 可以</strong>：管理其負責 App 的使用者權限（授權/撤銷）</li>
+            <li><strong>App Admin 不能</strong>：管理 App 設定、指派其他 Admin、查看其他 App 的權限</li>
+            <li>被指派的員工必須已有 AuthCenter 帳號才能登入管理後台</li>
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- 註冊流程 -->
+    <div class="admin-card guide-section">
+        <h3>
+            <svg viewBox="0 0 20 20"><path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z"/></svg>
+            使用者註冊流程
+        </h3>
+        <p>新使用者需要透過註冊連結才能建立帳號：</p>
+        <ul>
+            <li><strong>方式一</strong>：使用者在 App 登入頁面嘗試登入 → 系統偵測到未註冊 → 使用者點擊「申請註冊」 → Teams 通知管理員 → 管理員在 Dashboard 的「待處理註冊」產生連結</li>
+            <li><strong>方式二</strong>：管理員主動在 Dashboard 輸入員工帳號，直接產生註冊連結</li>
+        </ul>
+        <div class="guide-tip">註冊連結預設有效 24 小時。連結中包含一次性 token，使用者設定密碼後即完成註冊。</div>
+    </div>
+
+    {% if is_super %}
+    <!-- 操作紀錄 -->
+    <div class="admin-card guide-section">
+        <h3>
+            <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>
+            操作紀錄
+        </h3>
+        <p>「操作紀錄」頁面記錄所有管理員的操作，包括：</p>
+        <ul>
+            <li>App 新增/修改/刪除</li>
+            <li>使用者權限授予/撤銷</li>
+            <li>App Admin 指派/移除</li>
+            <li>密碼重設、帳號刪除</li>
+            <li>註冊連結產生</li>
+        </ul>
+        <p>每筆記錄包含操作者、動作類型、對象和時間戳記，可用於稽核和問題追蹤。</p>
+    </div>
+    {% endif %}
+{% endblock %}

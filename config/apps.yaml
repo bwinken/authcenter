@@ -6,6 +6,7 @@
 #
 # Access control (optional):
 #   allowed_orgs: list of org_id strings, [] or omit = all organizations allowed
+#   token_expire_hours: JWT token 有效時間（小時），預設 12
 
 apps:
   - app_id: "ai_chat_app"
@@ -13,15 +14,18 @@ apps:
     redirect_uri: "http://localhost:8001/auth/callback"
     name: "AI Chat Assistant"
     allowed_orgs: []       # all organizations
+    token_expire_hours: 12
 
   - app_id: "ai_report_app"
     client_secret: "$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAeYK0W3txFZbJBo7RGdEiqwB3sYfNLMbW"  # plaintext: report_secret_456
     redirect_uri: "http://localhost:8002/auth/callback"
     name: "AI Report Generator"
     allowed_orgs: ["IT", "FIN"]
+    token_expire_hours: 12
 
   - app_id: "test_app"
     client_secret: "$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAeYK0W3txFZbJBo7RGdEiqwB3sYfNLMbW"  # plaintext: test_secret
     redirect_uri: "http://localhost:8001/callback"
     name: "Test Application"
     allowed_orgs: []
+    token_expire_hours: 12
