@@ -55,7 +55,6 @@
                         <th>操作</th>
                         <th>對象</th>
                         <th>詳情</th>
-                        <th>IP</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -93,7 +92,6 @@
                                        text-overflow: ellipsis;
                                        white-space: nowrap"
                                 title="{{ log.details }}">{{ log.details }}</td>
-                            <td style="font-size: 11px; color: var(--text-muted);">{{ log.ip_address }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>

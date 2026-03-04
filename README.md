@@ -410,7 +410,7 @@ Dashboard 顯示系統總覽資訊：
 | `reset_password` | 重設使用者密碼 |
 | `delete_user` | 刪除使用者帳號 |
 
-每筆紀錄包含：操作時間、操作者、操作類型、對象、詳情、IP 位址。
+每筆紀錄包含：操作時間、操作者、操作類型、對象、詳情。
 
 ### 5.2 App Admin 使用教學
 
@@ -1134,7 +1134,6 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `action` | VARCHAR(100) | 操作類型 |
 | `target` | TEXT | 操作對象 |
 | `details` | TEXT | 詳細資訊 |
-| `ip_address` | VARCHAR(45) | 來源 IP |
 | `created_at` | DATETIME | 操作時間 |
 
 ---

@@ -54,13 +54,6 @@ def _require_super(admin: dict | None) -> bool:
     return admin is not None and admin.get("is_super", False)
 
 
-def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
 # ─── Audit Log ─────────────────────────────────────────────────
 
 async def _log_action(
@@ -69,15 +62,14 @@ async def _log_action(
     action: str,
     target: str = "",
     details: str = "",
-    ip_address: str = "",
 ) -> None:
     """Record an admin action in the audit log."""
     await sqlite_session.execute(
         text(
-            "INSERT INTO admin_audit_log (admin_name, action, target, details, ip_address) "
-            "VALUES (:admin, :action, :target, :details, :ip)"
+            "INSERT INTO admin_audit_log (admin_name, action, target, details) "
+            "VALUES (:admin, :action, :target, :details)"
         ),
-        {"admin": admin_name, "action": action, "target": target, "details": details, "ip": ip_address},
+        {"admin": admin_name, "action": action, "target": target, "details": details},
     )
     await sqlite_session.commit()
     logger.info("Audit: %s | %s | %s | %s", admin_name, action, target, details)
@@ -318,7 +310,7 @@ async def generate_register_link(
     await _log_action(
         sqlite_session, admin["sub"], "generate_register_link",
         target=employee_name, details=f"link={link}",
-        ip_address=_get_client_ip(request),
+
     )
 
     templates = _get_templates()
@@ -402,7 +394,7 @@ async def update_app(
     await _log_action(
         sqlite_session, admin["sub"], "update_app", target=app_id,
         details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}",
-        ip_address=_get_client_ip(request),
+
     )
 
     apps = load_registered_apps()
@@ -458,7 +450,7 @@ async def create_app(
     await _log_action(
         sqlite_session, admin["sub"], "create_app", target=new_app_id,
         details=f"name={new_app_name.strip()}, redirect_uri={new_redirect_uri.strip()}",
-        ip_address=_get_client_ip(request),
+
     )
 
     apps = load_registered_apps()
@@ -497,7 +489,7 @@ async def delete_app(
     await _log_action(
         sqlite_session, admin["sub"], "delete_app", target=app_id,
         details=f"name={app_name}",
-        ip_address=_get_client_ip(request),
+
     )
 
     apps = load_registered_apps()
@@ -637,7 +629,7 @@ async def revoke_permission(
     if deleted:
         await _log_action(
             sqlite_session, admin_name, "revoke_permission", target=f"{employee_name}→{app_id}",
-            ip_address=_get_client_ip(request),
+    
         )
 
     return RedirectResponse("/admin/permissions", status_code=303)
@@ -709,7 +701,7 @@ async def assign_app_admin(
 
     await _log_action(
         sqlite_session, admin_name, "assign_app_admin", target=f"{employee_name}→{app_id}",
-        ip_address=_get_client_ip(request),
+
     )
 
     return RedirectResponse("/admin/admins", status_code=303)
@@ -743,7 +735,7 @@ async def remove_app_admin(
 
     await _log_action(
         sqlite_session, admin_name, "remove_app_admin", target=f"{employee_name}→{app_id}",
-        ip_address=_get_client_ip(request),
+
     )
 
     return RedirectResponse("/admin/admins", status_code=303)
@@ -780,7 +772,7 @@ async def audit_log_page(
         )
         total = result.scalar() or 0
         result = await sqlite_session.execute(
-            text("SELECT id, admin_name, action, target, details, ip_address, created_at "
+            text("SELECT id, admin_name, action, target, details, created_at "
                  "FROM admin_audit_log ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
             {"limit": page_size, "offset": offset},
         )
@@ -805,7 +797,7 @@ async def audit_log_page(
         params["limit"] = page_size
         params["offset"] = offset
         result = await sqlite_session.execute(
-            text(f"SELECT id, admin_name, action, target, details, ip_address, created_at "
+            text(f"SELECT id, admin_name, action, target, details, created_at "
                  f"FROM admin_audit_log WHERE admin_name = :ename OR {like_conditions} "
                  f"ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
             params,
@@ -813,7 +805,7 @@ async def audit_log_page(
 
     logs = [
         {"id": r[0], "admin_name": r[1], "action": r[2], "target": r[3],
-         "details": r[4], "ip_address": r[5], "created_at": r[6]}
+         "details": r[4], "created_at": r[5]}
         for r in result.fetchall()
     ]
 
@@ -905,7 +897,7 @@ async def reset_user_password(
 
     await _log_action(
         sqlite_session, admin["sub"], "reset_password", target=employee_name,
-        ip_address=_get_client_ip(request),
+
     )
 
     # Re-load users page with password displayed
@@ -956,7 +948,7 @@ async def delete_user_account(
     if deleted:
         await _log_action(
             sqlite_session, admin["sub"], "delete_user", target=employee_name,
-            ip_address=_get_client_ip(request),
+    
         )
 
     from urllib.parse import urlencode
