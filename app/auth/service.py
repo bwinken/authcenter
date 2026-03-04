@@ -96,6 +96,18 @@ async def invalidate_registration_token(
     await sqlite_session.commit()
 
 
+async def extend_registration_token(
+    sqlite_session: AsyncSession, token: str, ttl: int = 172800
+) -> None:
+    """延長 registration token 的有效期，讓管理員在 Dashboard 看到待處理請求。"""
+    new_expires = time.time() + ttl
+    await sqlite_session.execute(
+        text("UPDATE registration_tokens SET expires_at = :exp WHERE token = :token"),
+        {"exp": new_expires, "token": token},
+    )
+    await sqlite_session.commit()
+
+
 # ─── Level → Scopes Mapping ─────────────────────────────────
 
 LEVEL_SCOPE_MAP = {

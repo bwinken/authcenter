@@ -304,7 +304,12 @@ async def generate_register_link(
     settings = get_settings()
     employee_name = employee_name.strip().lower()
 
-    # Generate 24-hour registration token
+    # Clean up old pending tokens for this employee, then generate new 24-hour token
+    await sqlite_session.execute(
+        text("DELETE FROM registration_tokens WHERE employee_name = :ename"),
+        {"ename": employee_name},
+    )
+    await sqlite_session.commit()
     token = await service.generate_registration_token(
         sqlite_session, employee_name, app_id="", redirect_uri="", ttl=86400
     )

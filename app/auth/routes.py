@@ -286,20 +286,13 @@ async def request_register_submit(
     if app_info:
         app_name = app_info.get("name", app_name)
 
-    # Send webhook notification to admin
+    # Extend token TTL to 48 hours so admin can see it on Dashboard
+    await service.extend_registration_token(sqlite_session, token, ttl=172800)
+
+    # Send webhook notification to admin (best-effort, admin can also check Dashboard)
     sent = await send_registration_request_notification(staff, app_name)
     if not sent:
-        return templates.TemplateResponse("not_registered.html", {
-            "request": request,
-            "employee_name": employee_name,
-            "token": token,
-            "login_url": login_url,
-            "success": False,
-            "error": "通知發送失敗，請聯繫 IT 管理員協助處理。",
-        })
-
-    # Invalidate token after webhook succeeds
-    await service.invalidate_registration_token(sqlite_session, token)
+        logger.warning("Webhook 發送失敗，但註冊請求已保留在 Dashboard: %s", employee_name)
 
     settings = get_settings()
     return templates.TemplateResponse("not_registered.html", {
