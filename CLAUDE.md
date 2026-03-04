@@ -51,7 +51,7 @@ Each user must have an explicit entry in `user_app_permissions` to access an app
 
 ### Two-Tier Admin
 
-Super Admin credentials come from `.env` (`ADMIN_USERNAME`/`ADMIN_PASSWORD`), verified with `hmac.compare_digest`. App Admin is an employee assigned via `app_admins` table — authenticates with their normal password, then checked against the table. Both get a separate `admin_token` cookie (JWT with `aud="auth-center-admin"`, 2h TTL). Admin routes use `_verify_admin_cookie()` and `_require_super()` guards.
+Super Admin supports two login methods: (1) `.env` fixed credentials (`ADMIN_USERNAME`/`ADMIN_PASSWORD`), verified with `hmac.compare_digest`; (2) employees listed in `SUPER_ADMIN_EMPLOYEES` env var (comma-separated), who authenticate with their normal password. App Admin is an employee assigned via `app_admins` table — authenticates with their normal password, then checked against the table. Both get a separate `admin_token` cookie (JWT with `aud="auth-center-admin"`, 2h TTL). Admin routes use `_verify_admin_cookie()` and `_require_super()` guards.
 
 ### Key Patterns
 

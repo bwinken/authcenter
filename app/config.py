@@ -38,6 +38,11 @@ class Settings:
     # Super Admin
     ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")
     ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
+    SUPER_ADMIN_EMPLOYEES: list[str] = [
+        name.strip().lower()
+        for name in os.getenv("SUPER_ADMIN_EMPLOYEES", "").split(",")
+        if name.strip()
+    ]
 
     @property
     def mssql_url(self) -> str:

@@ -181,7 +181,7 @@ async def admin_login_submit(
         )
         return response
 
-    # 2. Try employee authentication (App Admin)
+    # 2. Try employee authentication (Super Admin employee / App Admin)
     staff, error = await service.authenticate(mssql_session, sqlite_session, username, password)
 
     if error == "needs_registration":
@@ -194,7 +194,24 @@ async def admin_login_submit(
             "request": request, "error": "帳號或密碼錯誤。",
         })
 
-    # 3. Check if this employee is an app admin
+    # 3. Check if this employee is a designated Super Admin
+    if staff.employee_name in settings.SUPER_ADMIN_EMPLOYEES:
+        token = create_token(
+            sub=staff.employee_name,
+            org_id=staff.org_id,
+            scopes=["super_admin"],
+            aud="auth-center-admin",
+            expire_hours=ADMIN_TOKEN_HOURS,
+        )
+        await _log_action(sqlite_session, staff.employee_name, "login", target="super_admin(employee)", ip_address=_get_client_ip(request))
+        response = RedirectResponse("/admin/dashboard", status_code=303)
+        response.set_cookie(
+            key="admin_token", value=token,
+            httponly=True, samesite="lax", max_age=ADMIN_TOKEN_HOURS * 3600,
+        )
+        return response
+
+    # 4. Check if this employee is an app admin
     admin_apps = await _get_admin_apps(sqlite_session, staff.employee_name)
     if not admin_apps:
         return templates.TemplateResponse("admin_login.html", {

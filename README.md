@@ -191,6 +191,8 @@ AUTH_CENTER_BASE_URL=http://localhost:8000
 # Super Admin 帳密
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your_secure_password
+# 指定員工為 Super Admin（逗號分隔，可與上方帳密並存）
+SUPER_ADMIN_EMPLOYEES=kane.beh,john.doe
 ```
 
 > **注意**：RSA 金鑰路徑建議使用**絕對路徑**，避免在不同目錄啟動時找不到檔案。
@@ -248,6 +250,7 @@ fastapi run app/main.py
 | `AUTH_CENTER_BASE_URL` | Auth Center 對外 URL | `http://localhost:8000` | |
 | `ADMIN_USERNAME` | Super Admin 帳號 | `admin` | * |
 | `ADMIN_PASSWORD` | Super Admin 密碼 | — | * |
+| `SUPER_ADMIN_EMPLOYEES` | 指定為 Super Admin 的員工（逗號分隔） | — | |
 
 ---
 
@@ -266,12 +269,17 @@ Auth Center 有兩層管理員，各自的權限不同：
 
 ### 5.1 Super Admin 使用教學
 
-Super Admin 是 Auth Center 的最高管理員，帳密設定在 `.env` 中。
+Super Admin 是 Auth Center 的最高管理員，支援兩種登入方式：
+
+- **方式 A**：使用 `.env` 中的 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 固定帳密
+- **方式 B**：在 `.env` 設定 `SUPER_ADMIN_EMPLOYEES=kane.beh,john.doe`，指定的員工用自己的密碼登入即擁有 Super Admin 權限
+
+兩種方式可同時啟用。
 
 #### Step 1：登入
 
 1. 打開瀏覽器，前往 `http://localhost:8000/admin/login`
-2. 輸入 `.env` 中的 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD`
+2. 輸入帳號和密碼（固定帳密或員工帳密皆可）
 3. 登入成功後進入 Dashboard
 
 > Super Admin JWT 有效時間為 2 小時，過期後需重新登入。
