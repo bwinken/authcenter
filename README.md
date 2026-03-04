@@ -670,13 +670,19 @@ apps:
   - app_id: "my_new_app"
     # ... client_secret, redirect_uri, name ...
     allowed_orgs: ["IT", "RD"]   # 只允許 IT 和 RD 組織，[] = 不限
+    default_level: 1             # 組織內使用者預設權限等級（0 = 無預設）
 ```
 
 | 欄位 | 說明 | 預設值 |
 |------|------|--------|
 | `allowed_orgs` | 允許的組織代碼清單，空陣列 `[]` = 不限組織 | `[]` |
+| `default_level` | 組織內使用者的預設權限等級（1/2/3），需搭配 `allowed_orgs` 使用 | `0` |
 
-**注意**：使用者還必須在 `user_app_permissions` 表中有明確的 level 授權才能存取 App。`allowed_orgs` 是額外的組織過濾條件。
+**組織預設權限規則**：
+- 當 `allowed_orgs` 非空且 `default_level > 0` 時，該組織的使用者自動擁有預設權限等級（無需在 `user_app_permissions` 中手動設定）
+- 若使用者同時有個人權限（`user_app_permissions`），以**個人權限為準**（包括 level=0 表示明確拒絕）
+- 若使用者無個人權限記錄，則 fallback 到組織預設等級
+- `allowed_orgs` 為空時，`default_level` 不生效（避免全組織自動授權）
 
 ### Step 4：取得 Auth Center 公鑰
 
@@ -888,7 +894,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 路徑：`/auth/dashboard`（需 JWT Cookie）
 
 - 顯示使用者資訊（使用者名稱、組織代碼）
-- 列出有權限存取的 App（僅顯示有明確 level 授權的 App）
+- 列出有權限存取的 App（包含個人權限及組織預設權限）
 - 顯示各 App 的 Level 與對應 Scopes
 
 ### 修改密碼
@@ -909,9 +915,12 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 登入 / Token 交換時的權限檢查邏輯：
   1. 查 allowed_orgs → org_id 符合？（空 = 全部允許）
      └─ 不符合 → 拒絕存取
-  2. 查 user_app_permissions 表 → 有 level entry？
-     ├─ 有 → 用 level 映射 scopes（見下方）
-     └─ 無 → 拒絕存取（HTTP 403）
+  2. 查 user_app_permissions 表 → 有個人 level entry？
+     ├─ 有 → 以個人 level 為準（含 level=0 明確拒絕）
+     └─ 無 → fallback 到組織預設 default_level
+  3. effective_level > 0？
+     ├─ 是 → 用 level 映射 scopes（見下方）
+     └─ 否 → 拒絕存取（HTTP 403）
 ```
 
 **Level → Scopes 自動映射規則：**
