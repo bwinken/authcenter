@@ -26,11 +26,23 @@ def _generate_token() -> str:
 
 
 def _get_or_create_token(request: Request) -> str:
-    """Read CSRF token from cookie, or generate a new one."""
+    """Read CSRF token from cookie, or generate a new one.
+
+    On first visit (no cookie), the generated token is cached on the request
+    state so that the middleware cookie and the template hidden field use the
+    same value.
+    """
     token = request.cookies.get(CSRF_COOKIE)
     if token:
         return token
-    return _generate_token()
+    # Cache on request.state so multiple calls within the same request
+    # (middleware + template) always return the same token.
+    cached: str | None = getattr(request.state, "_csrf_token", None)
+    if cached:
+        return cached
+    new_token = _generate_token()
+    request.state._csrf_token = new_token
+    return new_token
 
 
 def csrf_input(request: Request) -> str:
