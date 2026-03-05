@@ -58,16 +58,18 @@ async def login_page(
             "app_id": app_id,
             "redirect_uri": redirect_uri,
             "app_name": "Unknown",
+            "fatal": True,
         })
 
     # Validate redirect_uri matches registered app
     if app_info["redirect_uri"] != redirect_uri:
         return templates.TemplateResponse("login.html", {
             "request": request,
-            "error": "Redirect URI 不匹配。",
+            "error": "Redirect URI 不匹配，請聯繫應用程式管理員確認設定。",
             "app_id": app_id,
             "redirect_uri": redirect_uri,
             "app_name": app_info.get("name", app_id),
+            "fatal": True,
         })
 
     return templates.TemplateResponse("login.html", {
