@@ -204,7 +204,7 @@ async def admin_login_submit(
 
     if error == "needs_registration":
         return templates.TemplateResponse("admin_login.html", {
-            "request": request, "error": "此帳號尚未完成註冊。",
+            "request": request, "error": "此員工尚未註冊 AuthCenter 帳號，請先完成註冊。",
         })
 
     if staff is None:
