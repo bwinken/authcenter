@@ -576,6 +576,14 @@ async def change_password_submit(
     return response
 
 
+@router.get("/logout")
+async def user_logout():
+    """使用者登出，清除 access_token cookie 並重導至 Dashboard 登入頁。"""
+    response = RedirectResponse("/auth/dashboard", status_code=303)
+    response.delete_cookie("access_token")
+    return response
+
+
 def _verify_cookie(access_token: str | None) -> dict | None:
     """Verify a JWT from cookie. Returns payload or None."""
     if access_token is None:
