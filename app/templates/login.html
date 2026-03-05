@@ -3,6 +3,7 @@
 {% block content %}
     <p class="subtitle" style="margin-bottom: 24px;">登入以存取 {{ app_name }}</p>
     {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+    {% if not fatal %}
     <form method="POST" action="/auth/login">
         {{ csrf_input(request) }}
         <input type="hidden" name="app_id" value="{{ app_id }}">
@@ -26,9 +27,12 @@
         </div>
         <button type="submit" class="btn btn-primary">登入</button>
     </form>
+    {% endif %}
 {% endblock %}
 {% block links %}
+    {% if not fatal %}
     <a href="/auth/pre-register?app_id={{ app_id }}&redirect_uri={{ redirect_uri }}">還沒有帳號？點擊註冊</a>
     &nbsp;|&nbsp;
     <a href="/auth/forgot-password">忘記密碼？</a>
+    {% endif %}
 {% endblock %}
