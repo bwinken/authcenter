@@ -461,11 +461,10 @@ async def exchange_token(
     if staff is None:
         return JSONResponse({"error": "staff_not_found"}, status_code=400)
 
-    # Resolve scopes from per-user level
-    level = await service.get_user_app_level(sqlite_session, employee_name, body.app_id)
-    if level is None:
+    # Resolve scopes using the same logic as login (personal level + org default fallback)
+    allowed, reason, scopes = await service.check_app_access(sqlite_session, staff, app_info)
+    if not allowed:
         return JSONResponse({"error": "no_permission"}, status_code=403)
-    scopes = service.level_to_scopes(level)
     expire_hours = app_info.get("token_expire_hours", 12)
     token = create_token(
         sub=staff.employee_name,

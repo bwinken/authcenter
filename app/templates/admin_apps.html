@@ -99,6 +99,41 @@
         margin-top: 6px;
     }
     .org-level-warn.visible { display: block; }
+    /* ── Redirect URI Sub-Row ── */
+    .redirect-uri-row td {
+        padding-top: 0 !important;
+        padding-bottom: 12px !important;
+        border-top: none !important;
+        background: #f9fafb;
+    }
+    .redirect-uri-field {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 4px;
+    }
+    .redirect-uri-field label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+        white-space: nowrap;
+        min-width: 80px;
+    }
+    .redirect-uri-field input {
+        flex: 1;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        font-size: 12px;
+        font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+        background: #fff;
+        color: var(--text-main);
+    }
+    .redirect-uri-field input:focus {
+        outline: none;
+        border-color: var(--border-focus);
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    }
     /* ── New App Form ── */
     .new-app-grid {
         display: grid;
@@ -168,18 +203,7 @@
                                        id="hidden_orgs_{{ aid }}"
                                        value="{{ info.get('allowed_orgs', []) | join(',') }}">
                             </td>
-                            <td>
-                                {{ info.get('name', aid) }}
-                                {% if is_super %}
-                                <details style="margin-top: 4px;">
-                                    <summary style="font-size: 11px; color: var(--text-muted);">Redirect URI</summary>
-                                    <input form="form_{{ aid }}" type="text" name="redirect_uri"
-                                           value="{{ info.get('redirect_uri', '') }}"
-                                           style="width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; margin-top: 4px;"
-                                           placeholder="http://...">
-                                </details>
-                                {% endif %}
-                            </td>
+                            <td>{{ info.get('name', aid) }}</td>
                             <td>
                                 <div class="org-tag-picker" id="picker_{{ aid }}">
                                     {% for org in info.get('allowed_orgs', []) %}
@@ -247,6 +271,19 @@
                                 </div>
                             </td>
                         </tr>
+                        {% if is_super %}
+                        <tr class="redirect-uri-row">
+                            <td colspan="6">
+                                <div class="redirect-uri-field">
+                                    <label for="redirect_{{ aid }}">Redirect URI</label>
+                                    <input form="form_{{ aid }}" type="url" name="redirect_uri"
+                                           id="redirect_{{ aid }}"
+                                           value="{{ info.get('redirect_uri', '') }}"
+                                           placeholder="http://localhost:8001/auth/callback">
+                                </div>
+                            </td>
+                        </tr>
+                        {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
