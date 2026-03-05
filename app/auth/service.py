@@ -290,14 +290,14 @@ def _check_org_access(staff: StaffInfo, app_info: dict) -> tuple[bool, str]:
 def _get_org_default_level(staff: StaffInfo, app_info: dict) -> int:
     """取得使用者因組織而獲得的預設權限等級。回傳 0 表示無預設權限。
 
-    只在 allowed_orgs 非空且 default_level > 0 時生效。
+    當 allowed_orgs 非空且使用者組織在列表中時，回傳 default_level（未設定則預設 1）。
     """
     allowed_orgs = app_info.get("allowed_orgs") or []
-    default_level = app_info.get("default_level", 0) or 0
-    if not allowed_orgs or not default_level:
+    if not allowed_orgs:
         return 0
     if staff.org_id in allowed_orgs:
-        return default_level
+        default_level = app_info.get("default_level") or 1
+        return max(default_level, 1)
     return 0
 
 
