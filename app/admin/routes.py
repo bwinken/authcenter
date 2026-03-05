@@ -371,18 +371,26 @@ async def apps_page(
     request: Request,
     admin_token: str | None = Cookie(default=None),
     mssql_session: AsyncSession = Depends(get_mssql_session),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """App 管理頁面（僅 Super Admin）。
+    """App 管理頁面。
 
-    列出所有已註冊的 App，可編輯 allowed_orgs、新增或刪除 App。
+    Super Admin 可查看所有 App 並新增/刪除；
+    App Admin 僅可查看並編輯自己管理的 App 設定（不可新增/刪除）。
     """
     admin = _verify_admin_cookie(admin_token)
-    if not _require_super(admin):
+    if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
 
     templates = _get_templates()
     apps = load_registered_apps()
     available_orgs = await _fetch_available_orgs(mssql_session)
+
+    # App Admin: filter to their managed apps only
+    if not admin.get("is_super"):
+        admin_app_ids = await _get_admin_apps(sqlite_session, admin["sub"])
+        apps = {k: v for k, v in apps.items() if k in admin_app_ids}
+
     ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs)
     return templates.TemplateResponse("admin_apps.html", ctx)
 
@@ -398,14 +406,21 @@ async def update_app(
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
     mssql_session: AsyncSession = Depends(get_mssql_session),
 ):
-    """更新 App 的存取規則（僅 Super Admin）。
+    """更新 App 的存取規則（Super Admin 或該 App 的 App Admin）。
 
     可修改 allowed_orgs、default_level、token_expire_hours。
     變更會寫回 config/apps.yaml 並記錄至 audit log。
+    App Admin 僅能修改自己管理的 App，且不能刪除 App。
     """
     admin = _verify_admin_cookie(admin_token)
-    if not _require_super(admin):
+    if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
+
+    # App Admin 僅能修改自己管理的 App
+    if not admin.get("is_super"):
+        admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
+        if app_id not in admin_apps:
+            return RedirectResponse("/admin/permissions", status_code=303)
 
     templates = _get_templates()
     apps = load_registered_apps()

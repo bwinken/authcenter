@@ -140,9 +140,17 @@ async def lifespan(app: FastAPI):
                 app_id        VARCHAR(100) NOT NULL,
                 assigned_by   VARCHAR(50)  NOT NULL DEFAULT '',
                 assigned_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
+                auto_assigned BOOLEAN      DEFAULT 0,
                 PRIMARY KEY (employee_name, app_id)
             )
         """))
+        # Migration: add auto_assigned column if missing (existing deployments)
+        try:
+            await conn.execute(text(
+                "ALTER TABLE app_admins ADD COLUMN auto_assigned BOOLEAN DEFAULT 0"
+            ))
+        except Exception:
+            pass  # Column already exists
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS admin_audit_log (
                 id            INTEGER      PRIMARY KEY AUTOINCREMENT,

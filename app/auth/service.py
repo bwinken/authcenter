@@ -417,7 +417,11 @@ async def set_user_level(
     level: int,
     granted_by: str = "",
 ) -> None:
-    """Grant or update per-user level for an app."""
+    """Grant or update per-user level for an app.
+
+    Level 3 自動同步為 App Admin（auto_assigned=1）；
+    從 level 3 降級時自動移除 auto_assigned 的 App Admin 記錄。
+    """
     employee_name = normalize_employee_name(employee_name)
     level = max(1, min(3, level))
     await sqlite_session.execute(
@@ -428,6 +432,27 @@ async def set_user_level(
         ),
         {"ename": employee_name, "aid": app_id, "level": level, "by": granted_by},
     )
+
+    # Level 3 ↔ App Admin 自動同步
+    if level == 3:
+        await sqlite_session.execute(
+            text(
+                "INSERT INTO app_admins (employee_name, app_id, assigned_by, auto_assigned) "
+                "VALUES (:ename, :aid, :by, 1) "
+                "ON CONFLICT(employee_name, app_id) DO NOTHING"
+            ),
+            {"ename": employee_name, "aid": app_id, "by": granted_by},
+        )
+    else:
+        # 降級時僅移除自動指派的 App Admin，手動指派的保留
+        await sqlite_session.execute(
+            text(
+                "DELETE FROM app_admins "
+                "WHERE employee_name = :ename AND app_id = :aid AND auto_assigned = 1"
+            ),
+            {"ename": employee_name, "aid": app_id},
+        )
+
     await sqlite_session.commit()
     logger.info("Permission granted: %s → %s level=%d by=%s", employee_name, app_id, level, granted_by)
 
@@ -435,10 +460,21 @@ async def set_user_level(
 async def remove_user_permission(
     sqlite_session: AsyncSession, employee_name: str, app_id: str
 ) -> bool:
-    """Remove per-user permission. Returns True if a record was deleted."""
+    """Remove per-user permission. Returns True if a record was deleted.
+
+    同時移除自動指派的 App Admin 記錄。
+    """
     employee_name = normalize_employee_name(employee_name)
     result = await sqlite_session.execute(
         text("DELETE FROM user_app_permissions WHERE employee_name = :ename AND app_id = :aid"),
+        {"ename": employee_name, "aid": app_id},
+    )
+    # 撤銷權限時，同步移除自動指派的 App Admin
+    await sqlite_session.execute(
+        text(
+            "DELETE FROM app_admins "
+            "WHERE employee_name = :ename AND app_id = :aid AND auto_assigned = 1"
+        ),
         {"ename": employee_name, "aid": app_id},
     )
     await sqlite_session.commit()
