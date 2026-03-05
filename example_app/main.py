@@ -18,7 +18,7 @@ AI App 整合 Auth Center 完整範例
     5. 執行: fastapi dev example_app/main.py --port 8001
 
 .env 範例：
-    AUTH_CENTER_URL=http://localhost:8000
+    AUTH_CENTER_BASE_URL=http://localhost:8000
     APP_ID=ai_chat_app
     CLIENT_SECRET=chat_secret_123
     REDIRECT_URI=http://localhost:8001/auth/callback
@@ -49,7 +49,7 @@ load_dotenv()
 # ║  設定                                                       ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-AUTH_CENTER_URL = os.getenv("AUTH_CENTER_URL", "http://localhost:8000")
+AUTH_CENTER_BASE_URL = os.getenv("AUTH_CENTER_BASE_URL", "http://localhost:8000")
 APP_ID = os.getenv("APP_ID", "ai_chat_app")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET", "chat_secret_123")
 REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8001/auth/callback")
@@ -58,7 +58,7 @@ PUBLIC_KEY_PATH = os.getenv("PUBLIC_KEY_PATH", "./keys/public.pem")
 ALGORITHM = "RS256"
 TOKEN_MAX_AGE = 12 * 60 * 60  # 12 小時（與 Auth Center JWT 過期時間一致）
 
-LOGIN_URL = f"{AUTH_CENTER_URL}/auth/login?app_id={APP_ID}&redirect_uri={REDIRECT_URI}"
+LOGIN_URL = f"{AUTH_CENTER_BASE_URL}/auth/login?app_id={APP_ID}&redirect_uri={REDIRECT_URI}"
 
 
 @lru_cache
@@ -197,7 +197,7 @@ def _landing_page() -> str:
                 Login with Auth Center
             </a>
             <p style="margin-top: 16px; font-size: 13px; color: #999;">
-                Auth Center: {html.escape(AUTH_CENTER_URL)}<br>
+                Auth Center: {html.escape(AUTH_CENTER_BASE_URL)}<br>
                 App ID: {html.escape(APP_ID)}
             </p>
         </div>
@@ -382,7 +382,7 @@ async def login_for_swagger(
 
     # Step 1: 向 Auth Center 提交登入（模擬表單 POST）
     login_resp = await client.post(
-        f"{AUTH_CENTER_URL}/auth/login",
+        f"{AUTH_CENTER_BASE_URL}/auth/login",
         data={
             "employee_name": form_data.username,
             "password": form_data.password,
@@ -413,7 +413,7 @@ async def login_for_swagger(
 
     # Step 2: 用 code + client_secret 換取 JWT
     token_resp = await client.post(
-        f"{AUTH_CENTER_URL}/auth/token",
+        f"{AUTH_CENTER_BASE_URL}/auth/token",
         json={"code": code, "app_id": APP_ID, "client_secret": CLIENT_SECRET},
     )
 
@@ -442,7 +442,7 @@ async def auth_callback(request: Request, code: str = Query(...)):
     """OAuth2 callback — 接收 Auth Center 回傳的 code，換取 JWT 存入 Cookie。"""
     client: httpx.AsyncClient = request.app.state.http_client
     resp = await client.post(
-        f"{AUTH_CENTER_URL}/auth/token",
+        f"{AUTH_CENTER_BASE_URL}/auth/token",
         json={"code": code, "app_id": APP_ID, "client_secret": CLIENT_SECRET},
     )
 

@@ -782,12 +782,12 @@ fastapi dev example_app/main.py --port 8001
 | Auth Center 公鑰 | 從 Auth Center 取得 `public.pem`，放到 App 專案中 |
 | apps.yaml 已註冊 | 確認 `app_id`、`client_secret`（bcrypt hash）、`redirect_uri` 已設定 |
 | 安裝依賴 | `pip install PyJWT[crypto] httpx` |
-| App 端環境變數 | 設定 `AUTH_CENTER_URL`、`APP_ID`、`CLIENT_SECRET`、`REDIRECT_URI` |
+| App 端環境變數 | 設定 `AUTH_CENTER_BASE_URL`、`APP_ID`、`CLIENT_SECRET`、`REDIRECT_URI` |
 
 App 端建議的 `.env`：
 
 ```env
-AUTH_CENTER_URL=http://localhost:8000
+AUTH_CENTER_BASE_URL=http://localhost:8000
 APP_ID=my_new_app
 CLIENT_SECRET=my_app_secret_2024
 REDIRECT_URI=http://localhost:8001/auth/callback
@@ -829,7 +829,7 @@ sequenceDiagram
 from fastapi.responses import RedirectResponse
 import os
 
-AUTH_CENTER = os.getenv("AUTH_CENTER_URL", "http://localhost:8000")
+AUTH_CENTER = os.getenv("AUTH_CENTER_BASE_URL", "http://localhost:8000")
 APP_ID = os.getenv("APP_ID", "ai_chat_app")
 REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8001/auth/callback")
 
@@ -940,7 +940,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 - [ ] `apps.yaml` 已新增 App 設定（app_id, client_secret hash, redirect_uri, name）
 - [ ] 已設定 `allowed_orgs`（或確認不需限制）
 - [ ] App 專案中有 `public.pem`
-- [ ] App `.env` 中設定了 `AUTH_CENTER_URL`、`APP_ID`、`CLIENT_SECRET`、`REDIRECT_URI`
+- [ ] App `.env` 中設定了 `AUTH_CENTER_BASE_URL`、`APP_ID`、`CLIENT_SECRET`、`REDIRECT_URI`
 - [ ] 實作了未登入時的 302 重導邏輯
 - [ ] 實作了 `/auth/callback` 端點（code → token 交換）
 - [ ] Token 存入 HttpOnly + Secure + SameSite Cookie
