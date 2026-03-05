@@ -47,11 +47,15 @@ Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` 
 
 ### Permission Model (Per-User-Per-App Level)
 
-Each user must have an explicit entry in `user_app_permissions` to access an app. No permission entry = access denied (403). The `level` integer maps to scopes automatically: 1→`[read]`, 2→`[read,write]`, 3→`[read,write,admin]`. Organization-based filtering via `allowed_orgs` in `apps.yaml` is checked separately.
+Each user must have an explicit entry in `user_app_permissions` to access an app. No permission entry = access denied (403). The `level` integer maps to scopes automatically: 1→`[read]`, 2→`[read,write]`, 3→`[read,write,admin]`. Organization-based filtering via `allowed_orgs` in `apps.yaml` is checked separately. Default permission (`default_level`) only supports Level 1 and 2; Level 3 must be explicitly granted per user.
+
+### Level 3 ↔ App Admin Auto-Sync
+
+Granting Level 3 permission automatically assigns the user as App Admin (`auto_assigned=1`). Downgrading or revoking removes the auto-assigned entry but preserves manually assigned App Admin status. The `app_admins` table has an `auto_assigned` BOOLEAN column to distinguish.
 
 ### Two-Tier Admin
 
-Super Admin supports two login methods: (1) `.env` fixed credentials (`ADMIN_USERNAME`/`ADMIN_PASSWORD`), verified with `hmac.compare_digest`; (2) employees listed in `SUPER_ADMIN_EMPLOYEES` env var (comma-separated), who authenticate with their normal password. App Admin is an employee assigned via `app_admins` table — authenticates with their normal password, then checked against the table. Both get a separate `admin_token` cookie (JWT with `aud="auth-center-admin"`, 2h TTL). Admin routes use `_verify_admin_cookie()` and `_require_super()` guards.
+Super Admin supports two login methods: (1) `.env` fixed credentials (`ADMIN_USERNAME`/`ADMIN_PASSWORD`), verified with `hmac.compare_digest`; (2) employees listed in `SUPER_ADMIN_EMPLOYEES` env var (comma-separated), who authenticate with their normal password. App Admin is an employee assigned via `app_admins` table (manually or auto-assigned from Level 3) — authenticates with their normal password, then checked against the table. App Admin can edit their app's settings (allowed_orgs, default_level, token_expire_hours) but cannot create/delete apps. Both get a separate `admin_token` cookie (JWT with `aud="auth-center-admin"`, 2h TTL). Admin routes use `_verify_admin_cookie()` and `_require_super()` guards.
 
 ### Key Patterns
 
@@ -59,6 +63,7 @@ Super Admin supports two login methods: (1) `.env` fixed credentials (`ADMIN_USE
 - **Timing-attack prevention**: Dummy `bcrypt.verify` on unknown users; `hmac.compare_digest` for admin
 - **Auth code consumption**: Atomic `DELETE ... RETURNING` to prevent double-spend
 - **Background cleanup**: Hourly asyncio task in lifespan clears expired tokens
+- **App access logging**: `app_access_log` table records each token exchange (user, app, IP, timestamp)
 - **Templates**: Jinja2 initialized in `main.py`, passed to routers via `init_templates()`
 
 ## Conventions

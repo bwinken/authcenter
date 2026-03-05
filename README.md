@@ -264,11 +264,13 @@ Auth Center 有兩層管理員，各自的權限不同：
 | 功能 | Super Admin | App Admin |
 |------|:-----------:|:---------:|
 | 查看 Dashboard | 全部 App 統計 | 僅自己管理的 App |
-| App 管理（新增/編輯/刪除） | ✓ | ✗ |
+| App 管理 — 新增/刪除 | ✓ | ✗ |
+| App 管理 — 編輯設定（允許組織、預設權限、Token 時間） | ✓ | ✓（僅自己的 App） |
 | 使用者權限管理（所有 App） | ✓ | ✗ |
 | 使用者權限管理（自己的 App） | ✓ | ✓ |
 | 會員管理（重設密碼 / 刪除帳號） | ✓ | ✗ |
 | 指定 / 移除 App Admin | ✓ | ✗ |
+| 查看存取紀錄 | 全部 App | 僅自己管理的 App |
 | 查看 Audit Log | 全部紀錄 | 僅相關紀錄 |
 
 ### 5.1 Super Admin 使用教學
@@ -317,7 +319,7 @@ Dashboard 顯示系統總覽資訊：
 
 1. 在 App 列表中找到目標 App
 2. 透過「允許組織」的下拉選單逐一選取組織代碼（從 IT Master DB 自動載入可用組織），已選的組織會以標籤顯示，點擊 × 可移除；留空表示不限組織
-3. 設定「預設權限」等級（需先設定允許組織才生效）
+3. 設定「預設權限」等級（僅支援 Level 1 和 Level 2，Level 3 必須逐人手動授權；需先設定允許組織才生效）
 4. 點擊「儲存」
 
 **刪除 App：**
@@ -384,13 +386,29 @@ Dashboard 顯示系統總覽資訊：
 
 該員工就可以用自己的帳密登入 Admin 後台，管理被指定 App 的使用者權限。
 
+**Level 3 自動同步：**
+
+- 當授予使用者 Level 3（Admin）權限時，該使用者會自動成為該 App 的 App Admin
+- 當使用者的權限從 Level 3 降級或被撤銷時，自動移除其 App Admin 身份（僅限自動指派的）
+- Super Admin 手動指派的 App Admin 不受 Level 3 降級影響
+
 **移除 App Admin：**
 
 - 在 App Admin 列表中，點擊「移除」按鈕
 
 > 同一位員工可以同時管理多個 App（分別指定即可）。
 
-#### Step 7：查看操作紀錄
+#### Step 7：查看存取紀錄
+
+前往「**存取紀錄**」頁面（導覽列 → 存取紀錄）：
+
+記錄使用者透過 AuthCenter 登入 App 並取得 Token 的歷史：
+
+- **統計資訊**：總存取次數、今日存取次數、今日活躍人數
+- **篩選功能**：可依 App 或使用者名稱過濾
+- **記錄內容**：時間、使用者名稱、App 名稱、IP 位址
+
+#### Step 8：查看操作紀錄
 
 前往「**操作紀錄**」頁面（導覽列 → 操作紀錄）：
 
@@ -433,7 +451,7 @@ App Admin 由 Super Admin 指定，用自己的員工帳密登入，只能管理
 
 Dashboard 只會顯示你負責管理的 App 資訊（不會看到其他 App）。
 
-> **App 管理**和 **Admin 管理**不會出現在導覽列中，因為這些功能僅限 Super Admin。
+> **Admin 管理**和**會員管理**不會出現在導覽列中，因為這些功能僅限 Super Admin。App Admin 可以在「App 管理」頁面編輯自己負責的 App 設定（允許組織、預設權限、Token 有效時間），但無法新增或刪除 App。
 
 #### Step 3：管理使用者權限
 
@@ -454,7 +472,24 @@ Dashboard 只會顯示你負責管理的 App 資訊（不會看到其他 App）�
 
 > 你無法為其他 App 授權或撤銷權限，系統會自動過濾。
 
-#### Step 4：查看操作紀錄
+#### Step 4：管理 App 設定
+
+前往「**App 管理**」頁面：
+
+你可以編輯自己負責管理的 App 的以下設定：
+- **允許組織**：指定哪些組織的員工可以存取此 App
+- **預設權限**：組織內員工的預設權限等級（僅支援 Level 1 和 Level 2）
+- **Token 有效時間**：JWT Token 的有效小時數
+
+> 你無法新增或刪除 App，這些操作僅限 Super Admin。
+
+#### Step 5：查看存取紀錄
+
+前往「**存取紀錄**」頁面：
+
+顯示你負責管理的 App 的使用者存取紀錄，包含統計資訊和篩選功能。
+
+#### Step 6：查看操作紀錄
 
 前往「**操作紀錄**」頁面：
 
@@ -703,7 +738,7 @@ apps:
 | 欄位 | 說明 | 預設值 |
 |------|------|--------|
 | `allowed_orgs` | 允許的組織代碼清單，空陣列 `[]` = 不限組織 | `[]` |
-| `default_level` | 組織內使用者的預設權限等級（1/2/3），需搭配 `allowed_orgs` 使用 | `0` |
+| `default_level` | 組織內使用者的預設權限等級（僅 1 或 2，Level 3 須逐人授權），需搭配 `allowed_orgs` 使用 | `0` |
 | `token_expire_hours` | JWT Token 有效時間（小時），可在 Admin 管理介面調整 | `12` |
 
 **組織預設權限規則**：
@@ -998,9 +1033,9 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `GET` | `/admin/logout` | Admin 登出 | 公開 |
 | `GET` | `/admin/dashboard` | Admin 總覽頁 | Super / App Admin |
 | `POST` | `/admin/generate-register-link` | 產生註冊連結（24hr） | Super Admin |
-| `GET` | `/admin/apps` | App 管理頁面 | Super Admin |
+| `GET` | `/admin/apps` | App 管理頁面 | Super / App Admin |
 | `POST` | `/admin/apps/create` | 新增 App | Super Admin |
-| `POST` | `/admin/apps/update` | 更新 App 存取規則 | Super Admin |
+| `POST` | `/admin/apps/update` | 更新 App 存取規則 | Super / App Admin |
 | `POST` | `/admin/apps/delete` | 刪除 App | Super Admin |
 | `GET` | `/admin/permissions` | 使用者權限管理頁面 | Super / App Admin |
 | `POST` | `/admin/permissions` | 授予使用者權限 | Super / App Admin |
@@ -1011,6 +1046,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `POST` | `/admin/users/delete` | 刪除使用者帳號 | Super Admin |
 | `POST` | `/admin/admins/assign` | 指定 App Admin | Super Admin |
 | `POST` | `/admin/admins/remove` | 移除 App Admin | Super Admin |
+| `GET` | `/admin/access-log` | 存取紀錄頁面 | Super / App Admin |
 | `GET` | `/admin/audit-log` | 操作紀錄頁面 | Super / App Admin |
 
 ### `POST /auth/token` 詳細規格
@@ -1131,6 +1167,18 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `app_id` | VARCHAR(100) PK | 管理的 App |
 | `assigned_by` | VARCHAR(50) | 指派者（Super Admin） |
 | `assigned_at` | DATETIME | 指派時間 |
+| `auto_assigned` | BOOLEAN | 是否由 Level 3 權限自動指派（0=手動, 1=自動） |
+
+**`app_access_log`** — App 存取紀錄（Token 交換時寫入）
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `id` | INTEGER PK | 自增 ID |
+| `employee_name` | VARCHAR(50) | 使用者名稱 |
+| `app_id` | VARCHAR(100) | 存取的 App |
+| `app_name` | VARCHAR(200) | App 顯示名稱 |
+| `ip_address` | VARCHAR(45) | 使用者 IP |
+| `created_at` | DATETIME | 存取時間 |
 
 **`admin_audit_log`** — Admin 操作紀錄
 
@@ -1257,7 +1305,9 @@ auth-center/
 │       ├── admin_apps.html      # App 管理
 │       ├── admin_admins.html    # App Admin 管理
 │       ├── admin_permissions.html # 使用者權限管理
-│       └── admin_audit_log.html # 操作紀錄
+│       ├── admin_access_log.html  # App 存取紀錄
+│       ├── admin_audit_log.html   # 操作紀錄
+│       └── admin_guide.html       # 使用指南
 ├── config/
 │   └── apps.yaml            # 已註冊 App 清單
 ├── keys/                    # RSA 金鑰對（gitignore）

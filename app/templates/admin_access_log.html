@@ -1,0 +1,165 @@
+{% extends "admin_base.html" %}
+{% block title %}存取紀錄 - AuthCenter Admin{% endblock %}
+{% block extra_style %}
+    <style>
+    .stats-row {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+    .mini-stat {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px 20px;
+        flex: 1;
+    }
+    .mini-stat .val {
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--text-main);
+    }
+    .mini-stat .label {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-top: 2px;
+    }
+    .filter-bar {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+    .filter-bar select, .filter-bar input {
+        padding: 7px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 13px;
+        font-family: inherit;
+    }
+    .filter-bar select:focus, .filter-bar input:focus {
+        outline: none;
+        border-color: var(--border-focus);
+    }
+    .pagination {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        justify-content: center;
+        margin-top: 16px;
+        font-size: 13px;
+    }
+    .pagination a, .pagination span {
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        text-decoration: none;
+        color: var(--text-main);
+    }
+    .pagination a:hover { background: #f3f4f6; }
+    .pagination .current { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .pagination .disabled { color: var(--text-muted); cursor: default; }
+    </style>
+{% endblock %}
+{% block content %}
+    <div class="page-header">
+        <h1>App 存取紀錄</h1>
+        <p>使用者透過 AuthCenter 登入 App 的歷史記錄
+            {% if not is_super %}（僅顯示您管理的 App）{% endif %}
+        </p>
+    </div>
+
+    <div class="stats-row">
+        <div class="mini-stat">
+            <div class="val">{{ total }}</div>
+            <div class="label">總存取次數</div>
+        </div>
+        <div class="mini-stat">
+            <div class="val">{{ today_count }}</div>
+            <div class="label">今日存取次數</div>
+        </div>
+        <div class="mini-stat">
+            <div class="val">{{ today_users }}</div>
+            <div class="label">今日活躍人數</div>
+        </div>
+    </div>
+
+    <div class="admin-card">
+        <form method="GET" action="/admin/access-log" class="filter-bar">
+            <select name="app">
+                <option value="">所有 App</option>
+                {% for opt in app_options %}
+                    <option value="{{ opt.app_id }}"
+                            {% if opt.app_id == app_filter %}selected{% endif %}>
+                        {{ opt.app_name or opt.app_id }}
+                    </option>
+                {% endfor %}
+            </select>
+            <input type="text" name="user" value="{{ user_filter }}"
+                   placeholder="搜尋使用者名稱...">
+            <button type="submit" class="btn btn-primary btn-sm">篩選</button>
+            {% if app_filter or user_filter %}
+                <a href="/admin/access-log" class="btn btn-sm"
+                   style="border:1px solid var(--border); text-decoration:none; color:var(--text-main);">清除</a>
+            {% endif %}
+        </form>
+
+        {% if logs %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>時間</th>
+                        <th>使用者</th>
+                        <th>App</th>
+                        <th>IP 位址</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                        <tr>
+                            <td style="font-size: 12px; white-space: nowrap; color: var(--text-muted)">
+                                {{ log.created_at }}
+                            </td>
+                            <td>{{ log.employee_name }}</td>
+                            <td>
+                                <span class="badge badge-green">{{ log.app_name or log.app_id }}</span>
+                            </td>
+                            <td style="font-size: 12px; color: var(--text-muted)">
+                                {{ log.ip_address }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            {% if total_pages > 1 %}
+                <div class="pagination">
+                    {% set base_url = "/admin/access-log?" %}
+                    {% set qs = "app=" ~ app_filter ~ "&user=" ~ user_filter ~ "&" %}
+                    {% if page > 1 %}
+                        <a href="{{ base_url }}{{ qs }}page={{ page - 1 }}">上一頁</a>
+                    {% else %}
+                        <span class="disabled">上一頁</span>
+                    {% endif %}
+                    {% for p in range(1, total_pages + 1) %}
+                        {% if p == page %}
+                            <span class="current">{{ p }}</span>
+                        {% elif p <= 3 or p > total_pages - 2 or (p >= page - 1 and p <= page + 1) %}
+                            <a href="{{ base_url }}{{ qs }}page={{ p }}">{{ p }}</a>
+                        {% elif p == 4 or p == total_pages - 2 %}
+                            <span>...</span>
+                        {% endif %}
+                    {% endfor %}
+                    {% if page < total_pages %}
+                        <a href="{{ base_url }}{{ qs }}page={{ page + 1 }}">下一頁</a>
+                    {% else %}
+                        <span class="disabled">下一頁</span>
+                    {% endif %}
+                </div>
+            {% endif %}
+        {% else %}
+            <div class="empty-state">尚無存取紀錄。</div>
+        {% endif %}
+    </div>
+{% endblock %}

@@ -91,7 +91,7 @@
         <ul>
             <li><strong>新增 App</strong>：填入 App ID、名稱、Redirect URI，系統會自動產生 <code>client_secret</code>（僅顯示一次，請立即複製）</li>
             <li><strong>允許組織</strong>：指定哪些組織的員工可以存取此 App，留空表示不限制</li>
-            <li><strong>預設權限</strong>：當允許組織非空時，組織內的員工自動擁有此預設權限等級（無需逐一授權）</li>
+            <li><strong>預設權限</strong>：當允許組織非空時，組織內的員工自動擁有此預設權限等級（無需逐一授權）。預設權限僅支援 Level 1（Read）和 Level 2（Read+Write），Level 3（Admin）必須逐人手動授權</li>
             <li><strong>Token 有效時間</strong>：設定使用者登入後取得的 JWT Token 有效小時數（1-720 小時，預設 12）</li>
             <li><strong>刪除 App</strong>：刪除後該 App 的 OAuth 流程將失效，但已存在的使用者權限記錄不會自動刪除</li>
         </ul>
@@ -166,8 +166,9 @@
         </h3>
         <p>你可以指派員工為特定 App 的管理員（App Admin），讓他們協助管理該 App 的使用者權限。</p>
         <ul>
-            <li><strong>App Admin 可以</strong>：管理其負責 App 的使用者權限（授權/撤銷）</li>
-            <li><strong>App Admin 不能</strong>：管理 App 設定、指派其他 Admin、查看其他 App 的權限</li>
+            <li><strong>App Admin 可以</strong>：管理其負責 App 的使用者權限（授權/撤銷）、編輯 App 設定（允許組織、預設權限、Token 有效時間）</li>
+            <li><strong>App Admin 不能</strong>：新增/刪除 App、指派其他 Admin、查看其他 App 的權限</li>
+            <li><strong>Level 3 自動同步</strong>：授予使用者 Level 3 權限時，該使用者會自動成為該 App 的 App Admin；降級或撤銷時自動移除（手動指派的不受影響）</li>
             <li>被指派的員工必須已有 AuthCenter 帳號才能登入管理後台</li>
         </ul>
     </div>
@@ -185,6 +186,23 @@
             <li><strong>方式二</strong>：管理員主動在 Dashboard 輸入員工帳號，直接產生註冊連結</li>
         </ul>
         <div class="guide-tip">註冊連結預設有效 24 小時。連結中包含一次性 token，使用者設定密碼後即完成註冊。</div>
+    </div>
+
+    <!-- 存取紀錄 -->
+    <div class="admin-card guide-section">
+        <h3>
+            <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z" clip-rule="evenodd"/></svg>
+            存取紀錄
+        </h3>
+        <p>「存取紀錄」頁面記錄使用者透過 AuthCenter 登入 App 並取得 Token 的歷史，包括：</p>
+        <ul>
+            <li><strong>統計資訊</strong>：總存取次數、今日存取次數、今日活躍人數</li>
+            <li><strong>篩選功能</strong>：可依 App 或使用者名稱過濾</li>
+            <li><strong>記錄內容</strong>：時間、使用者名稱、App 名稱、IP 位址</li>
+        </ul>
+        {% if not is_super %}
+        <div class="guide-tip">App Admin 僅能查看自己管理的 App 的存取紀錄。</div>
+        {% endif %}
     </div>
 
     {% if is_super %}

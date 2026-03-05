@@ -130,7 +130,7 @@
 {% block content %}
     <div class="page-header">
         <h1>App 管理</h1>
-        <p>管理已註冊的應用程式設定</p>
+        <p>{% if is_super %}管理已註冊的應用程式設定{% else %}管理您負責的 App 設定（允許組織、預設權限、Token 有效時間）{% endif %}</p>
     </div>
     {% if new_secret %}
         <div class="secret-box">
@@ -205,7 +205,6 @@
                                     <option value="0" {% if info.get('default_level', 0) == 0 %}selected{% endif %}>無</option>
                                     <option value="1" {% if info.get('default_level', 0) == 1 %}selected{% endif %}>Level 1 (Read)</option>
                                     <option value="2" {% if info.get('default_level', 0) == 2 %}selected{% endif %}>Level 2 (R+W)</option>
-                                    <option value="3" {% if info.get('default_level', 0) == 3 %}selected{% endif %}>Level 3 (Admin)</option>
                                 </select>
                             </td>
                             <td>
@@ -220,18 +219,20 @@
                             <td>
                                 <div style="display: flex; gap: 6px; align-items: center;">
                                     <button type="submit" form="form_{{ aid }}" class="btn btn-primary btn-sm">儲存</button>
-                                    <details>
-                                        <summary style="font-size: 12px;">刪除</summary>
-                                        <form method="POST" action="/admin/apps/delete" style="display: inline;">
-                                            {{ csrf_input(request) }}
-                                            <input type="hidden" name="app_id" value="{{ aid }}">
-                                            <button type="submit"
-                                                    class="btn btn-danger btn-sm"
-                                                    onclick="return confirm('確定要刪除 {{ info.get('name', aid) }}？此操作無法復原。')">
-                                                確認刪除
-                                            </button>
-                                        </form>
-                                    </details>
+                                    {% if is_super %}
+                                        <details>
+                                            <summary style="font-size: 12px;">刪除</summary>
+                                            <form method="POST" action="/admin/apps/delete" style="display: inline;">
+                                                {{ csrf_input(request) }}
+                                                <input type="hidden" name="app_id" value="{{ aid }}">
+                                                <button type="submit"
+                                                        class="btn btn-danger btn-sm"
+                                                        onclick="return confirm('確定要刪除 {{ info.get('name', aid) }}？此操作無法復原。')">
+                                                    確認刪除
+                                                </button>
+                                            </form>
+                                        </details>
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
@@ -242,7 +243,8 @@
             <div class="empty-state">尚未註冊任何 App。</div>
         {% endif %}
     </div>
-    <!-- Add New App -->
+    <!-- Add New App (Super Admin only) -->
+    {% if is_super %}
     <div class="admin-card">
         <h2>新增 App</h2>
         <form method="POST" action="/admin/apps/create">
@@ -284,6 +286,7 @@
             </div>
         </form>
     </div>
+    {% endif %}
     <script>
     function removeOrg(appId, org) {
         var picker = document.getElementById('picker_' + appId);
