@@ -754,6 +754,7 @@ async def forgot_password_submit(
     request: Request,
     employee_name: str = Form(...),
     mssql_session: AsyncSession = Depends(get_mssql_session),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """處理忘記密碼請求（含頻率限制）。
 
@@ -773,6 +774,12 @@ async def forgot_password_submit(
     staff = await service.verify_staff(mssql_session, employee_name)
     if staff is None:
         ctx["error"] = "在公司員工名單中查無此名稱，請確認輸入是否正確。"
+        return templates.TemplateResponse("forgot_password.html", ctx)
+
+    # 確認該員工已註冊 AuthCenter 帳號
+    has_account = await service.check_account_exists(sqlite_session, employee_name)
+    if not has_account:
+        ctx["error"] = "此員工尚未註冊 AuthCenter 帳號，請先完成註冊。"
         return templates.TemplateResponse("forgot_password.html", ctx)
 
     sent = await send_forgot_password_notification(staff)
