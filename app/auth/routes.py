@@ -210,7 +210,7 @@ async def pre_register_submit(
     # Check staff exists in MSSQL
     staff = await service.verify_staff(mssql_session, employee_name)
     if staff is None:
-        ctx["error"] = "使用者名稱不存在，請確認輸入是否正確。"
+        ctx["error"] = "在公司員工名單中查無此名稱，請確認輸入是否正確。"
         return templates.TemplateResponse("pre_register.html", ctx)
 
     # Check if already registered in SQLite
@@ -394,7 +394,7 @@ async def register_submit(
     # Verify staff exists in MSSQL
     staff = await service.verify_staff(mssql_session, employee_name)
     if staff is None:
-        ctx["error"] = "使用者名稱不存在。"
+        ctx["error"] = "在公司員工名單中查無此名稱，請確認輸入是否正確。"
         return templates.TemplateResponse("register.html", ctx)
 
     # Create account — use try/except to handle race condition (#5)
@@ -772,7 +772,7 @@ async def forgot_password_submit(
 
     staff = await service.verify_staff(mssql_session, employee_name)
     if staff is None:
-        ctx["error"] = "使用者名稱不存在。"
+        ctx["error"] = "在公司員工名單中查無此名稱，請確認輸入是否正確。"
         return templates.TemplateResponse("forgot_password.html", ctx)
 
     sent = await send_forgot_password_notification(staff)
