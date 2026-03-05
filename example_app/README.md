@@ -152,7 +152,7 @@ async def admin(user=Depends(require_scopes(["read", "admin"]))):
 
 | 變數 | 說明 | 預設值 |
 |------|------|--------|
-| `AUTH_CENTER_URL` | Auth Center 位址 | `http://localhost:8000` |
+| `AUTH_CENTER_BASE_URL` | Auth Center 位址 | `http://localhost:8000` |
 | `APP_ID` | 在 Auth Center 註冊的 App ID | `ai_chat_app` |
 | `CLIENT_SECRET` | App 的明文密鑰 | `chat_secret_123` |
 | `REDIRECT_URI` | OAuth2 callback URL | `http://localhost:8001/auth/callback` |
