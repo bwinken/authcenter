@@ -294,6 +294,8 @@ def _get_org_default_level(staff: StaffInfo, app_info: dict) -> int:
     """
     allowed_orgs = app_info.get("allowed_orgs") or []
     default_level = app_info.get("default_level", 0) or 0
+    # 預設權限不允許 level 3（需逐人手動授予）
+    default_level = min(default_level, 2)
     if not allowed_orgs or not default_level:
         return 0
     if staff.org_id in allowed_orgs:

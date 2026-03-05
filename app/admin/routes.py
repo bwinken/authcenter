@@ -437,6 +437,8 @@ async def update_app(
     old_default_level = apps[app_id].get("default_level", 0)
     old_token_hours = apps[app_id].get("token_expire_hours", 12)
     token_expire_hours = max(1, min(720, token_expire_hours))
+    # 預設權限不允許 level 3（需逐人手動授予）
+    default_level = max(0, min(2, default_level))
     apps[app_id]["allowed_orgs"] = orgs
     apps[app_id]["default_level"] = default_level
     apps[app_id]["token_expire_hours"] = token_expire_hours
