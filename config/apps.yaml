@@ -10,21 +10,21 @@
 
 apps:
   - app_id: "ai_chat_app"
-    client_secret: "$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAeYK0W3txFZbJBo7RGdEiqwB3sYfNLMbW"  # plaintext: chat_secret_123
+    client_secret: "$2b$12$dRPu5K776HmMkYCpT8QZmeTg4hFGusmgapab346WxC/F7AQVqBJsi"  # plaintext: chat_secret_123
     redirect_uri: "http://localhost:8001/auth/callback"
     name: "AI Chat Assistant"
     allowed_orgs: []       # all organizations
     token_expire_hours: 12
 
   - app_id: "ai_report_app"
-    client_secret: "$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAeYK0W3txFZbJBo7RGdEiqwB3sYfNLMbW"  # plaintext: report_secret_456
+    client_secret: "$2b$12$BF3diOavoQBJmSbXYHKCautM7rsx4mKpz2GLyUN0t7A3DGl5dOi7e"  # plaintext: report_secret_456
     redirect_uri: "http://localhost:8002/auth/callback"
     name: "AI Report Generator"
     allowed_orgs: ["IT", "FIN"]
     token_expire_hours: 12
 
   - app_id: "test_app"
-    client_secret: "$2b$12$LJ3m4ys4Gz8Kl0rVOpAjAeYK0W3txFZbJBo7RGdEiqwB3sYfNLMbW"  # plaintext: test_secret
+    client_secret: "$2b$12$Y1H8HHMYH5Nq454XH82fLOHNjpi5xGfQ.uDjbSx.pxW1VMRWnA/56"  # plaintext: test_secret
     redirect_uri: "http://localhost:8001/callback"
     name: "Test Application"
     allowed_orgs: []
