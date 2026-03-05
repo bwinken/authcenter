@@ -210,7 +210,7 @@ async def pre_register_submit(
     # Check staff exists in MSSQL
     staff = await service.verify_staff(mssql_session, employee_name)
     if staff is None:
-        ctx["error"] = "使用者名稱不存在，請確認輸入是否正確。"
+        ctx["error"] = "在公司員工名單中查無此名稱，請確認輸入是否正確。"
         return templates.TemplateResponse("pre_register.html", ctx)
 
     # Check if already registered in SQLite
@@ -394,7 +394,7 @@ async def register_submit(
     # Verify staff exists in MSSQL
     staff = await service.verify_staff(mssql_session, employee_name)
     if staff is None:
-        ctx["error"] = "使用者名稱不存在。"
+        ctx["error"] = "在公司員工名單中查無此名稱，請確認輸入是否正確。"
         return templates.TemplateResponse("register.html", ctx)
 
     # Create account — use try/except to handle race condition (#5)
@@ -754,6 +754,7 @@ async def forgot_password_submit(
     request: Request,
     employee_name: str = Form(...),
     mssql_session: AsyncSession = Depends(get_mssql_session),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
     """處理忘記密碼請求（含頻率限制）。
 
@@ -772,7 +773,13 @@ async def forgot_password_submit(
 
     staff = await service.verify_staff(mssql_session, employee_name)
     if staff is None:
-        ctx["error"] = "使用者名稱不存在。"
+        ctx["error"] = "在公司員工名單中查無此名稱，請確認輸入是否正確。"
+        return templates.TemplateResponse("forgot_password.html", ctx)
+
+    # 確認該員工已註冊 AuthCenter 帳號
+    has_account = await service.check_account_exists(sqlite_session, employee_name)
+    if not has_account:
+        ctx["error"] = "此員工尚未註冊 AuthCenter 帳號，請先完成註冊。"
         return templates.TemplateResponse("forgot_password.html", ctx)
 
     sent = await send_forgot_password_notification(staff)

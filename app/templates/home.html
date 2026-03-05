@@ -33,21 +33,21 @@
         }
 
         .hero svg {
-            width: 48px;
-            height: 48px;
+            width: 56px;
+            height: 56px;
             fill: var(--primary);
             margin-bottom: 16px;
         }
 
         .hero h1 {
-            font-size: 28px;
+            font-size: 32px;
             font-weight: 700;
             letter-spacing: -0.02em;
             margin-bottom: 8px;
         }
 
         .hero p {
-            font-size: 16px;
+            font-size: 18px;
             color: var(--text-muted);
             max-width: 480px;
             margin: 0 auto;
@@ -69,7 +69,7 @@
         }
 
         .section h2 {
-            font-size: 16px;
+            font-size: 18px;
             font-weight: 600;
             margin-bottom: 16px;
             display: flex;
@@ -78,8 +78,8 @@
         }
 
         .section h2 svg {
-            width: 20px;
-            height: 20px;
+            width: 22px;
+            height: 22px;
             fill: var(--primary);
             flex-shrink: 0;
         }
@@ -98,12 +98,12 @@
         }
 
         .step-num {
-            width: 28px;
-            height: 28px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
             background: #ecfdf5;
             color: var(--primary);
-            font-size: 13px;
+            font-size: 15px;
             font-weight: 700;
             display: flex;
             align-items: center;
@@ -113,48 +113,73 @@
         }
 
         .step-content h3 {
-            font-size: 14px;
+            font-size: 16px;
             font-weight: 600;
             margin-bottom: 3px;
         }
 
         .step-content p {
-            font-size: 13px;
+            font-size: 15px;
             color: var(--text-muted);
             line-height: 1.5;
         }
 
-        /* ── Quick Links ── */
-        .quick-links {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        /* ── Guide Links ── */
+        .guide-list {
+            display: flex;
+            flex-direction: column;
             gap: 12px;
         }
 
-        .quick-link {
+        .guide-item {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 14px 16px;
+            gap: 14px;
+            padding: 16px 18px;
             border: 1px solid var(--border);
             border-radius: 8px;
             text-decoration: none;
             color: var(--text-main);
-            font-size: 14px;
-            font-weight: 500;
             transition: border-color 0.15s, background 0.15s;
         }
 
-        .quick-link:hover {
+        .guide-item:hover {
             border-color: var(--primary);
             background: #f0fdf4;
         }
 
-        .quick-link svg {
-            width: 18px;
-            height: 18px;
-            fill: var(--primary);
+        .guide-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            background: #ecfdf5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             flex-shrink: 0;
+        }
+
+        .guide-icon svg {
+            width: 22px;
+            height: 22px;
+            fill: var(--primary);
+        }
+
+        .guide-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .guide-text strong {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .guide-text span {
+            font-size: 15px;
+            color: var(--text-muted);
+            line-height: 1.4;
         }
 
         /* ── FAQ ── */
@@ -166,7 +191,7 @@
         .faq-item:last-child { border-bottom: none; }
 
         .faq-item summary {
-            font-size: 14px;
+            font-size: 16px;
             font-weight: 500;
             cursor: pointer;
             list-style: none;
@@ -178,7 +203,7 @@
         .faq-item summary::before {
             content: '>';
             font-family: monospace;
-            font-size: 12px;
+            font-size: 14px;
             color: var(--text-muted);
             transition: transform 0.15s;
             display: inline-block;
@@ -187,7 +212,7 @@
         .faq-item[open] summary::before { transform: rotate(90deg); }
 
         .faq-item p {
-            font-size: 13px;
+            font-size: 15px;
             color: var(--text-muted);
             line-height: 1.6;
             margin-top: 8px;
@@ -197,7 +222,7 @@
         .footer {
             text-align: center;
             padding: 24px;
-            font-size: 12px;
+            font-size: 14px;
             color: var(--text-muted);
         }
 
@@ -223,18 +248,42 @@
                     <svg viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM4 11a1 1 0 100-2H3a1 1 0 000 2h1zM10 18a8 8 0 100-16 8 8 0 000 16z"/></svg>
                     常用功能
                 </h2>
-                <div class="quick-links">
-                    <a href="/auth/dashboard" class="quick-link">
-                        <svg viewBox="0 0 20 20"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
-                        我的 App
+                <div class="guide-list">
+                    <a href="/auth/pre-register" class="guide-item">
+                        <div class="guide-icon">
+                            <svg viewBox="0 0 20 20"><path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z"/></svg>
+                        </div>
+                        <div class="guide-text">
+                            <strong>還沒有帳號？點這裡註冊</strong>
+                            <span>公司同仁首次使用，請先申請註冊 AuthCenter 帳號。</span>
+                        </div>
                     </a>
-                    <a href="/auth/change-password" class="quick-link">
-                        <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
-                        修改密碼
+                    <a href="/auth/dashboard" class="guide-item">
+                        <div class="guide-icon">
+                            <svg viewBox="0 0 20 20"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
+                        </div>
+                        <div class="guide-text">
+                            <strong>查看我的權限與 App</strong>
+                            <span>已註冊的同仁，可查看目前被授權的 AI App 及存取等級。</span>
+                        </div>
                     </a>
-                    <a href="/auth/forgot-password" class="quick-link">
-                        <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
-                        忘記密碼
+                    <a href="/auth/forgot-password" class="guide-item">
+                        <div class="guide-icon">
+                            <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+                        </div>
+                        <div class="guide-text">
+                            <strong>忘記密碼</strong>
+                            <span>已註冊但忘記密碼，點此通知管理員為您重設。</span>
+                        </div>
+                    </a>
+                    <a href="/auth/change-password" class="guide-item">
+                        <div class="guide-icon">
+                            <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+                        </div>
+                        <div class="guide-text">
+                            <strong>修改密碼</strong>
+                            <span>已註冊的同仁，可自行變更 AuthCenter 密碼。</span>
+                        </div>
                     </a>
                 </div>
             </div>
@@ -303,6 +352,6 @@
                 </details>
             </div>
         </div>
-        <div class="footer">AuthCenter &copy; 2025 — 企業內部 AI App 統一認證服務</div>
+        <div class="footer">AuthCenter &copy; 2026 — 企業內部 AI App 統一認證服務</div>
     </body>
 </html>
