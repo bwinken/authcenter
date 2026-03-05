@@ -168,7 +168,18 @@
                                        id="hidden_orgs_{{ aid }}"
                                        value="{{ info.get('allowed_orgs', []) | join(',') }}">
                             </td>
-                            <td>{{ info.get('name', aid) }}</td>
+                            <td>
+                                {{ info.get('name', aid) }}
+                                {% if is_super %}
+                                <details style="margin-top: 4px;">
+                                    <summary style="font-size: 11px; color: var(--text-muted);">Redirect URI</summary>
+                                    <input form="form_{{ aid }}" type="text" name="redirect_uri"
+                                           value="{{ info.get('redirect_uri', '') }}"
+                                           style="width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; margin-top: 4px;"
+                                           placeholder="http://...">
+                                </details>
+                                {% endif %}
+                            </td>
                             <td>
                                 <div class="org-tag-picker" id="picker_{{ aid }}">
                                     {% for org in info.get('allowed_orgs', []) %}

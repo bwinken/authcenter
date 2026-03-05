@@ -399,6 +399,7 @@ async def apps_page(
 async def update_app(
     request: Request,
     app_id: str = Form(...),
+    redirect_uri: str = Form(default=""),
     allowed_orgs: str = Form(default=""),
     default_level: int = Form(default=0),
     token_expire_hours: int = Form(default=12),
@@ -442,11 +443,19 @@ async def update_app(
     apps[app_id]["allowed_orgs"] = orgs
     apps[app_id]["default_level"] = default_level
     apps[app_id]["token_expire_hours"] = token_expire_hours
+
+    # Super Admin 可修改 redirect_uri
+    old_redirect_uri = apps[app_id].get("redirect_uri", "")
+    redirect_uri_changed = ""
+    if admin.get("is_super") and redirect_uri.strip() and redirect_uri.strip() != old_redirect_uri:
+        apps[app_id]["redirect_uri"] = redirect_uri.strip()
+        redirect_uri_changed = f", redirect_uri: {old_redirect_uri}→{redirect_uri.strip()}"
+
     save_registered_apps(apps)
 
     await _log_action(
         sqlite_session, admin["sub"], "update_app", target=app_id,
-        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}, token_expire_hours: {old_token_hours}→{token_expire_hours}",
+        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}, token_expire_hours: {old_token_hours}→{token_expire_hours}{redirect_uri_changed}",
 
     )
 
