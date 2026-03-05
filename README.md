@@ -161,6 +161,7 @@ python generate_keys.py
 
 ```bash
 cp .env.example .env
+cp config/apps.yaml.example config/apps.yaml
 ```
 
 編輯 `.env`，填入必要資訊：

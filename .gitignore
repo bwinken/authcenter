@@ -10,6 +10,9 @@ keys/public.pem
 # Logs
 logs/
 
+# App registry (use apps.yaml.example as template)
+config/apps.yaml
+
 # Database
 *.db
 

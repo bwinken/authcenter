@@ -1,0 +1,22 @@
+# Registered AI Applications
+# Each app must have: app_id, client_secret, redirect_uri, name
+#
+# client_secret should be a bcrypt hash.
+# Generate: from passlib.hash import bcrypt; bcrypt.hash("your_secret")
+# Or use Admin UI to create apps (auto-generates secret).
+#
+# Access control (optional):
+#   allowed_orgs: list of org_id strings, [] or omit = all organizations allowed
+#   default_level: org default permission level (1 or 2), 0 = no default
+#   token_expire_hours: JWT token validity in hours, default 12
+#
+# Copy this file to apps.yaml and customize:
+#   cp config/apps.yaml.example config/apps.yaml
+
+apps:
+  - app_id: "my_app"
+    client_secret: "$2b$12$..."   # bcrypt hash of your client_secret
+    redirect_uri: "http://localhost:8001/auth/callback"
+    name: "My AI App"
+    allowed_orgs: []
+    token_expire_hours: 12
