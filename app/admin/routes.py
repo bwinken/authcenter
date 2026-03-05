@@ -784,6 +784,108 @@ async def remove_app_admin(
 
 
 # ═══════════════════════════════════════════════════════════════
+# APP ACCESS LOG (使用者存取紀錄)
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.get("/access-log", response_class=HTMLResponse)
+async def access_log_page(
+    request: Request,
+    admin_token: str | None = Cookie(default=None),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+    page: int = Query(default=1, ge=1),
+    app_filter: str = Query(default="", alias="app"),
+    user_filter: str = Query(default="", alias="user"),
+):
+    """App 存取紀錄頁面，顯示使用者透過 App 取得 Token 的歷史。
+
+    - Super Admin：查看所有 App 存取紀錄。
+    - App Admin：僅顯示自己管理的 App 相關紀錄。
+    支援依 App 及使用者篩選。
+    """
+    admin = _verify_admin_cookie(admin_token)
+    if admin is None:
+        return RedirectResponse("/admin/login", status_code=303)
+
+    templates = _get_templates()
+    page_size = 50
+    offset = (page - 1) * page_size
+
+    # Build query conditions
+    conditions = []
+    params: dict = {}
+
+    if not admin.get("is_super"):
+        admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
+        if not admin_apps:
+            admin_apps = ["__none__"]
+        placeholders = ", ".join(f":mapp{i}" for i in range(len(admin_apps)))
+        for i, app in enumerate(admin_apps):
+            params[f"mapp{i}"] = app
+        conditions.append(f"app_id IN ({placeholders})")
+
+    if app_filter:
+        conditions.append("app_id = :app_filter")
+        params["app_filter"] = app_filter
+
+    if user_filter:
+        conditions.append("employee_name LIKE :user_filter")
+        params["user_filter"] = f"%{user_filter}%"
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    # Count
+    result = await sqlite_session.execute(
+        text(f"SELECT COUNT(*) FROM app_access_log {where}"), params,
+    )
+    total = result.scalar() or 0
+
+    # Fetch page
+    params["limit"] = page_size
+    params["offset"] = offset
+    result = await sqlite_session.execute(
+        text(f"SELECT id, employee_name, app_id, app_name, ip_address, created_at "
+             f"FROM app_access_log {where} ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
+        params,
+    )
+    logs = [
+        {"id": r[0], "employee_name": r[1], "app_id": r[2], "app_name": r[3],
+         "ip_address": r[4], "created_at": r[5]}
+        for r in result.fetchall()
+    ]
+
+    # Stats: total accesses today, unique users today
+    result = await sqlite_session.execute(
+        text(f"SELECT COUNT(*), COUNT(DISTINCT employee_name) FROM app_access_log "
+             f"{'WHERE ' + ' AND '.join(conditions) + ' AND ' if conditions else 'WHERE '}"
+             f"date(created_at) = date('now')"),
+        {k: v for k, v in params.items() if k not in ("limit", "offset")},
+    )
+    row = result.fetchone()
+    today_count = row[0] if row else 0
+    today_users = row[1] if row else 0
+
+    # Get app list for filter dropdown
+    if admin.get("is_super"):
+        app_result = await sqlite_session.execute(
+            text("SELECT DISTINCT app_id, app_name FROM app_access_log ORDER BY app_id"),
+        )
+    else:
+        app_result = await sqlite_session.execute(
+            text(f"SELECT DISTINCT app_id, app_name FROM app_access_log WHERE app_id IN ({placeholders}) ORDER BY app_id"),
+            {k: v for k, v in params.items() if k.startswith("mapp")},
+        )
+    app_options = [{"app_id": r[0], "app_name": r[1]} for r in app_result.fetchall()]
+
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    ctx = _base_ctx(request, admin, "access_log",
+                    logs=logs, page=page, total_pages=total_pages, total=total,
+                    today_count=today_count, today_users=today_users,
+                    app_options=app_options, app_filter=app_filter, user_filter=user_filter)
+    return templates.TemplateResponse("admin_access_log.html", ctx)
+
+
+# ═══════════════════════════════════════════════════════════════
 # AUDIT LOG
 # ═══════════════════════════════════════════════════════════════
 

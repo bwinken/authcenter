@@ -154,12 +154,28 @@ async def lifespan(app: FastAPI):
                 created_at    DATETIME     DEFAULT CURRENT_TIMESTAMP
             )
         """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS app_access_log (
+                id              INTEGER      PRIMARY KEY AUTOINCREMENT,
+                employee_name   VARCHAR(50)  NOT NULL,
+                app_id          VARCHAR(100) NOT NULL,
+                app_name        VARCHAR(200) DEFAULT '',
+                ip_address      VARCHAR(45)  DEFAULT '',
+                created_at      DATETIME     DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
         # Indexes for efficient expiry cleanup
         await conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_auth_codes_expires_at ON auth_codes(expires_at)"
         ))
         await conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_reg_tokens_expires_at ON registration_tokens(expires_at)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_access_log_created ON app_access_log(created_at)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_access_log_app ON app_access_log(app_id)"
         ))
 
     # Enable WAL mode for better concurrent read/write performance (safe for multi-worker)

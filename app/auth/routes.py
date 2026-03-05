@@ -7,6 +7,7 @@ from fastapi import APIRouter, Cookie, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from passlib.hash import bcrypt
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -471,6 +472,18 @@ async def exchange_token(
         aud=body.app_id,
         expire_hours=expire_hours,
     )
+
+    # 記錄 App 存取紀錄
+    app_name = app_info.get("name", body.app_id)
+    client_ip = _get_client_ip(request)
+    await sqlite_session.execute(
+        text(
+            "INSERT INTO app_access_log (employee_name, app_id, app_name, ip_address) "
+            "VALUES (:ename, :app_id, :app_name, :ip)"
+        ),
+        {"ename": employee_name, "app_id": body.app_id, "app_name": app_name, "ip": client_ip},
+    )
+    await sqlite_session.commit()
 
     return {
         "access_token": token,
