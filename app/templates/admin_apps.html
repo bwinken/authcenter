@@ -21,15 +21,14 @@
         font-size: 13px;
         word-break: break-all;
     }
-    .app-edit-form { display: grid; grid-template-columns: minmax(160px, 260px) 120px auto auto; gap: 8px; align-items: start; }
-    .app-edit-form select {
+    .inline-select {
         padding: 6px 10px;
         border: 1px solid var(--border);
         border-radius: 4px;
         font-size: 12px;
         font-family: inherit;
     }
-    .app-edit-form select:focus {
+    .inline-select:focus {
         outline: none;
         border-color: var(--border-focus);
     }
@@ -43,8 +42,6 @@
         align-items: center;
         gap: 4px;
         min-height: 32px;
-        min-width: 160px;
-        max-width: 260px;
         padding: 3px 6px;
         border: 1px solid var(--border);
         border-radius: 4px;
@@ -84,6 +81,7 @@
         color: var(--text-muted);
         cursor: pointer;
         padding: 2px 0;
+        margin-left: auto;
     }
     .org-empty-hint {
         font-size: 11px;
@@ -98,10 +96,35 @@
         border: 1px solid #fcd34d;
         border-radius: 4px;
         padding: 4px 8px;
-        margin-top: 4px;
-        grid-column: 1 / -1;
+        margin-top: 6px;
     }
     .org-level-warn.visible { display: block; }
+    /* ── New App Form ── */
+    .new-app-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+    .new-app-grid .field { display: flex; flex-direction: column; gap: 4px; }
+    .new-app-grid .field.full { grid-column: 1 / -1; }
+    .new-app-grid label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+    }
+    .new-app-grid input {
+        padding: 8px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 13px;
+        font-family: inherit;
+    }
+    .new-app-grid input:focus {
+        outline: none;
+        border-color: var(--border-focus);
+    }
     </style>
 {% endblock %}
 {% block content %}
@@ -127,7 +150,7 @@
                         <th>允許組織<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">限制哪些組織的員工可以存取此 App。留空表示不限制。</span></span></th>
                         <th>預設權限<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">允許組織內使用者的預設權限等級，需先設定允許組織才生效。</span></span></th>
                         <th>Token 有效時間<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">使用者登入後取得的 JWT Token 有效時間（1-720 小時）。</span></span></th>
-                        <th>操作</th>
+                        <th style="min-width: 100px;">操作</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -135,74 +158,81 @@
                         <tr>
                             <td>
                                 <code style="font-size: 12px;">{{ aid }}</code>
-                            </td>
-                            <td>{{ info.get('name', aid) }}</td>
-                            <td colspan="3">
-                                <form method="POST" action="/admin/apps/update" class="app-edit-form">
+                                <form id="form_{{ aid }}" method="POST" action="/admin/apps/update" style="display:none;">
                                     {{ csrf_input(request) }}
                                     <input type="hidden" name="app_id" value="{{ aid }}">
-                                    <input type="hidden"
-                                           name="allowed_orgs"
-                                           id="hidden_orgs_{{ aid }}"
-                                           value="{{ info.get('allowed_orgs', []) | join(',') }}">
-                                    <div class="org-tag-picker" id="picker_{{ aid }}">
-                                        {% for org in info.get('allowed_orgs', []) %}
-                                            <span class="org-tag" data-org="{{ org }}">
-                                                {{ org }}
-                                                <button type="button"
-                                                        class="org-tag-remove"
-                                                        onclick="removeOrg('{{ aid }}', '{{ org }}')"
-                                                        title="移除 {{ org }}">&times;</button>
-                                            </span>
-                                        {% endfor %}
-                                        <span class="org-empty-hint"
-                                              id="hint_{{ aid }}"
-                                              {% if info.get('allowed_orgs') %}style="display:none"{% endif %}>全部（留空）</span>
-                                        <select class="org-add-select"
-                                                id="addsel_{{ aid }}"
-                                                onchange="addOrg('{{ aid }}', this)">
-                                            <option value="">+ 新增</option>
-                                            {% for org in available_orgs %}
-                                                <option value="{{ org }}"
-                                                        {% if org in info.get('allowed_orgs', []) %}disabled{% endif %}>{{ org }}</option>
-                                            {% endfor %}
-                                            {% if not available_orgs %}
-                                                <option value="" disabled>（無法載入組織清單）</option>
-                                            {% endif %}
-                                        </select>
-                                    </div>
-                                    <select name="default_level"
-                                            style="width: 120px"
-                                            title="組織內使用者的預設權限等級（需設定允許組織才生效）">
-                                        <option value="0" {% if info.get('default_level', 0) == 0 %}selected{% endif %}>無</option>
-                                        <option value="1" {% if info.get('default_level', 0) == 1 %}selected{% endif %}>Level 1 (Read)</option>
-                                        <option value="2" {% if info.get('default_level', 0) == 2 %}selected{% endif %}>Level 2 (R+W)</option>
-                                        <option value="3" {% if info.get('default_level', 0) == 3 %}selected{% endif %}>Level 3 (Admin)</option>
-                                    </select>
-                                    <div style="display: flex; align-items: center; gap: 4px;">
-                                        <input type="number" name="token_expire_hours"
-                                               value="{{ info.get('token_expire_hours', 12) }}"
-                                               min="1" max="720" style="width: 70px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px;"
-                                               title="JWT Token 有效時間（小時）">
-                                        <span style="font-size: 12px; color: var(--text-muted);">小時</span>
-                                    </div>
-                                    <button type="submit" class="btn btn-primary btn-sm">儲存</button>
-                                    <div class="org-level-warn" id="warn_{{ aid }}">⚠ 已設定允許組織但預設權限為「無」，組織內使用者將不會自動獲得存取權限，需逐人授權。</div>
                                 </form>
+                                <input type="hidden"
+                                       form="form_{{ aid }}"
+                                       name="allowed_orgs"
+                                       id="hidden_orgs_{{ aid }}"
+                                       value="{{ info.get('allowed_orgs', []) | join(',') }}">
+                            </td>
+                            <td>{{ info.get('name', aid) }}</td>
+                            <td>
+                                <div class="org-tag-picker" id="picker_{{ aid }}">
+                                    {% for org in info.get('allowed_orgs', []) %}
+                                        <span class="org-tag" data-org="{{ org }}">
+                                            {{ org }}
+                                            <button type="button"
+                                                    class="org-tag-remove"
+                                                    onclick="removeOrg('{{ aid }}', '{{ org }}')"
+                                                    title="移除 {{ org }}">&times;</button>
+                                        </span>
+                                    {% endfor %}
+                                    <span class="org-empty-hint"
+                                          id="hint_{{ aid }}"
+                                          {% if info.get('allowed_orgs') %}style="display:none"{% endif %}>全部（留空）</span>
+                                    <select class="org-add-select"
+                                            id="addsel_{{ aid }}"
+                                            onchange="addOrg('{{ aid }}', this)">
+                                        <option value="">+ 新增</option>
+                                        {% for org in available_orgs %}
+                                            <option value="{{ org }}"
+                                                    {% if org in info.get('allowed_orgs', []) %}disabled{% endif %}>{{ org }}</option>
+                                        {% endfor %}
+                                        {% if not available_orgs %}
+                                            <option value="" disabled>（無法載入組織清單）</option>
+                                        {% endif %}
+                                    </select>
+                                </div>
+                                <div class="org-level-warn" id="warn_{{ aid }}">⚠ 已設定允許組織但預設權限為「無」，組織內使用者將不會自動獲得存取權限，需逐人授權。</div>
                             </td>
                             <td>
-                                <details>
-                                    <summary>刪除</summary>
-                                    <form method="POST" action="/admin/apps/delete" style="display: inline;">
-                                        {{ csrf_input(request) }}
-                                        <input type="hidden" name="app_id" value="{{ aid }}">
-                                        <button type="submit"
-                                                class="btn btn-danger btn-sm"
-                                                onclick="return confirm('確定要刪除 {{ info.get('name', aid) }}？此操作無法復原。')">
-                                            確認刪除
-                                        </button>
-                                    </form>
-                                </details>
+                                <select form="form_{{ aid }}" name="default_level"
+                                        class="inline-select" style="width: 120px"
+                                        title="組織內使用者的預設權限等級（需設定允許組織才生效）">
+                                    <option value="0" {% if info.get('default_level', 0) == 0 %}selected{% endif %}>無</option>
+                                    <option value="1" {% if info.get('default_level', 0) == 1 %}selected{% endif %}>Level 1 (Read)</option>
+                                    <option value="2" {% if info.get('default_level', 0) == 2 %}selected{% endif %}>Level 2 (R+W)</option>
+                                    <option value="3" {% if info.get('default_level', 0) == 3 %}selected{% endif %}>Level 3 (Admin)</option>
+                                </select>
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    <input form="form_{{ aid }}" type="number" name="token_expire_hours"
+                                           value="{{ info.get('token_expire_hours', 12) }}"
+                                           min="1" max="720" style="width: 70px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px;"
+                                           title="JWT Token 有效時間（小時）">
+                                    <span style="font-size: 12px; color: var(--text-muted);">小時</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div style="display: flex; gap: 6px; align-items: center;">
+                                    <button type="submit" form="form_{{ aid }}" class="btn btn-primary btn-sm">儲存</button>
+                                    <details>
+                                        <summary style="font-size: 12px;">刪除</summary>
+                                        <form method="POST" action="/admin/apps/delete" style="display: inline;">
+                                            {{ csrf_input(request) }}
+                                            <input type="hidden" name="app_id" value="{{ aid }}">
+                                            <button type="submit"
+                                                    class="btn btn-danger btn-sm"
+                                                    onclick="return confirm('確定要刪除 {{ info.get('name', aid) }}？此操作無法復原。')">
+                                                確認刪除
+                                            </button>
+                                        </form>
+                                    </details>
+                                </div>
                             </td>
                         </tr>
                     {% endfor %}
@@ -217,24 +247,41 @@
         <h2>新增 App</h2>
         <form method="POST" action="/admin/apps/create">
             {{ csrf_input(request) }}
-            <div class="form-row">
-                <input type="text"
-                       name="new_app_id"
-                       placeholder="App ID（如 ai_chat_app）"
-                       required
-                       pattern="[a-z0-9_]+"
-                       title="僅限小寫字母、數字和底線（如 ai_chat_app）">
-                <input type="text" name="new_app_name" placeholder="顯示名稱" required>
+            <div class="new-app-grid">
+                <div class="field">
+                    <label>
+                        App ID
+                        <span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">App 的唯一識別碼，僅限小寫字母、數字和底線。建立後無法修改。</span></span>
+                    </label>
+                    <input type="text"
+                           name="new_app_id"
+                           placeholder="例如 ai_chat_app"
+                           required
+                           pattern="[a-z0-9_]+"
+                           title="僅限小寫字母、數字和底線（如 ai_chat_app）">
+                </div>
+                <div class="field">
+                    <label>
+                        顯示名稱
+                        <span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">App 在管理介面和使用者登入頁面顯示的名稱。</span></span>
+                    </label>
+                    <input type="text" name="new_app_name" placeholder="例如 AI 智能助手" required>
+                </div>
+                <div class="field full">
+                    <label>
+                        Redirect URI
+                        <span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">使用者登入成功後，AuthCenter 會帶著授權碼（code）導向此 URI。必須與 App 後端的 callback 路徑一致。</span></span>
+                    </label>
+                    <input type="text"
+                           name="new_redirect_uri"
+                           placeholder="例如 http://localhost:8001/auth/callback"
+                           required>
+                </div>
             </div>
-            <div class="form-row">
-                <input type="text"
-                       name="new_redirect_uri"
-                       placeholder="Redirect URI（如 http://localhost:8001/auth/callback）"
-                       required
-                       style="flex: 2">
-                <button type="submit" class="btn btn-primary">新增</button>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 16px;">
+                <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Client Secret 將自動產生，新增後僅顯示一次，請立即複製保存。</p>
+                <button type="submit" class="btn btn-primary">新增 App</button>
             </div>
-            <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Client Secret 將自動產生，新增後顯示一次。</p>
         </form>
     </div>
     <script>
@@ -262,8 +309,7 @@
         var hidden = document.getElementById('hidden_orgs_' + appId);
         var warn = document.getElementById('warn_' + appId);
         if (!warn) return;
-        var form = warn.closest('form');
-        var levelSel = form.querySelector('select[name="default_level"]');
+        var levelSel = document.querySelector('select[form="form_' + appId + '"][name="default_level"]');
         var hasOrgs = hidden.value && hidden.value.split(',').filter(Boolean).length > 0;
         var levelZero = levelSel && levelSel.value === '0';
         if (hasOrgs && levelZero) {
@@ -308,11 +354,10 @@
     }
     // 頁面載入時檢查 & 監聽 default_level 變更
     document.addEventListener('DOMContentLoaded', function() {
-        var forms = document.querySelectorAll('.app-edit-form');
-        forms.forEach(function(form) {
+        document.querySelectorAll('form[id^="form_"]').forEach(function(form) {
             var appId = form.querySelector('input[name="app_id"]').value;
             checkOrgLevelWarn(appId);
-            var levelSel = form.querySelector('select[name="default_level"]');
+            var levelSel = document.querySelector('select[form="form_' + appId + '"][name="default_level"]');
             if (levelSel) {
                 levelSel.addEventListener('change', function() {
                     checkOrgLevelWarn(appId);
