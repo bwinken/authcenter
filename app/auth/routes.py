@@ -632,6 +632,28 @@ async def dashboard_page(
     })
 
 
+@router.get("/dashboard/apps")
+async def dashboard_apps_api(
+    request: Request,
+    access_token: str | None = Cookie(default=None),
+    mssql_session: AsyncSession = Depends(get_mssql_session),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """JSON API：回傳使用者目前可存取的 App 列表，供前端輪詢即時更新。"""
+    user = _verify_cookie(access_token)
+    if user is None:
+        return JSONResponse({"apps": []}, status_code=401)
+
+    staff = await service.verify_staff(mssql_session, user["sub"])
+    if staff is None:
+        return JSONResponse({"apps": []}, status_code=401)
+
+    all_apps = load_registered_apps()
+    accessible = await service.get_user_accessible_apps(sqlite_session, staff, all_apps)
+
+    return JSONResponse({"apps": accessible})
+
+
 @router.post("/dashboard")
 async def dashboard_login(
     request: Request,

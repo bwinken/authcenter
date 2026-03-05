@@ -77,6 +77,7 @@
             組織：{{ staff.org_id }}
         </div>
         <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 14px;">可存取的應用程式</h2>
+        <div id="app-list-container">
         {% if apps %}
             <ul class="app-list">
                 {% for app in apps %}
@@ -98,6 +99,60 @@
         {% else %}
             <div class="empty-state">目前沒有可存取的應用程式。</div>
         {% endif %}
+        </div>
+        <script>
+        (function() {
+            var POLL_INTERVAL = 30000; // 每 30 秒輪詢一次
+            var container = document.getElementById('app-list-container');
+            if (!container) return;
+
+            function renderApps(apps) {
+                if (!apps || apps.length === 0) {
+                    container.innerHTML = '<div class="empty-state">目前沒有可存取的應用程式。</div>';
+                    return;
+                }
+                var html = '<ul class="app-list">';
+                for (var i = 0; i < apps.length; i++) {
+                    var app = apps[i];
+                    html += '<li class="app-item"><div class="app-meta">';
+                    html += '<div class="app-name">' + escapeHtml(app.name) + '</div>';
+                    html += '<div class="app-scopes"><span class="scope-tag">Level ' + app.level + '</span>';
+                    for (var j = 0; j < app.scopes.length; j++) {
+                        html += '<span class="scope-tag">' + escapeHtml(app.scopes[j]) + '</span>';
+                    }
+                    html += '</div></div>';
+                    if (app.redirect_uri) {
+                        html += '<a href="/auth/login?app_id=' + encodeURIComponent(app.app_id) +
+                                '&redirect_uri=' + encodeURIComponent(app.redirect_uri) +
+                                '" class="app-link">前往</a>';
+                    }
+                    html += '</li>';
+                }
+                html += '</ul>';
+                container.innerHTML = html;
+            }
+
+            function escapeHtml(text) {
+                var d = document.createElement('div');
+                d.textContent = text;
+                return d.innerHTML;
+            }
+
+            function pollApps() {
+                fetch('/auth/dashboard/apps', { credentials: 'same-origin' })
+                    .then(function(res) {
+                        if (res.status === 401) return null;
+                        return res.json();
+                    })
+                    .then(function(data) {
+                        if (data && data.apps) renderApps(data.apps);
+                    })
+                    .catch(function() { /* 網路錯誤時靜默忽略，下次再試 */ });
+            }
+
+            setInterval(pollApps, POLL_INTERVAL);
+        })();
+        </script>
     {% endif %}
 {% endblock %}
 {% block links %}
