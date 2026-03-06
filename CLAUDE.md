@@ -47,7 +47,7 @@ Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` 
 
 ### Permission Model (Per-User-Per-App Level)
 
-Each user must have an explicit entry in `user_app_permissions` to access an app. No permission entry = access denied (403). The `level` integer maps to scopes automatically: 0→`[]`(denied), 1→`[read]`, 2→`[read,write]`, 3→`[read,write,admin]`. Level 0 explicitly denies access even if organization default would allow it. Organization-based filtering via `allowed_orgs` in `apps.yaml` is checked separately. Default permission (`default_level`) only supports Level 1 and 2; Level 3 must be explicitly granted per user.
+Each user must have an explicit entry in `user_app_permissions` to access an app. No permission entry = access denied (403). The `level` integer maps to scopes automatically: 0→`[]`(denied), 1→`[read]`, 2→`[read,write]`, 3→`[read,write,admin]`. Level 0 explicitly denies access even if organization default would allow it. **Personal permission overrides org restriction**: if a user has an explicit `user_app_permissions` entry, access is determined solely by that level — `allowed_orgs` is NOT checked. Organization-based filtering via `allowed_orgs` only applies when there is no personal permission entry (fallback to org default). Default permission (`default_level`) only supports Level 1 and 2; Level 3 must be explicitly granted per user.
 
 ### Level 3 ↔ App Admin Auto-Sync
 

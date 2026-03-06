@@ -328,14 +328,29 @@ async def check_app_access(
     """Check if staff has permission to access the given app.
 
     Access logic:
-    1. Organization filter (allowed_orgs in apps.yaml) — org not in list → denied
-    2. Personal level 優先：有記錄就用 personal（包括 0=明確拒絕），無記錄 fallback org default
+    1. Personal level 優先：有明確記錄就直接採用（包括 0=明確拒絕），跳過組織檢查
+    2. 無個人記錄時 fallback：先檢查組織 → 再用 org default level
 
     Returns (allowed, reason, scopes).
     """
     app_id = app_info.get("app_id", "")
 
-    # 1. Check organization access
+    # 1. Personal level 優先（None = 無記錄，0 = 明確拒絕）
+    personal_level = await get_user_app_level(sqlite_session, staff.employee_name, app_id)
+
+    if personal_level is not None:
+        # 有明確個人權限，直接採用，不受組織限制
+        if personal_level <= 0:
+            logger.warning(
+                "App access denied: %s explicitly denied for %s (personal_level=0)",
+                staff.employee_name, app_id,
+            )
+            return False, "您尚未被授權存取此應用程式，請聯繫管理員。", []
+        scopes = level_to_scopes(personal_level)
+        logger.info("App access granted: %s → %s personal_level=%d scopes=%s", staff.employee_name, app_id, personal_level, scopes)
+        return True, "", scopes
+
+    # 2. 無個人記錄，fallback 到組織預設
     allowed, reason = _check_org_access(staff, app_info)
     if not allowed:
         logger.warning(
@@ -344,23 +359,16 @@ async def check_app_access(
         )
         return False, reason, []
 
-    # 2. Personal level 優先（None = 無記錄，0 = 明確拒絕）
-    personal_level = await get_user_app_level(sqlite_session, staff.employee_name, app_id)
-
-    if personal_level is not None:
-        effective_level = personal_level
-    else:
-        effective_level = _get_org_default_level(staff, app_info)
-
+    effective_level = _get_org_default_level(staff, app_info)
     if effective_level <= 0:
         logger.warning(
-            "App access denied: %s has no permission for %s (personal=%s, org_default=%d)",
-            staff.employee_name, app_id, personal_level, _get_org_default_level(staff, app_info),
+            "App access denied: %s has no permission for %s (no personal, org_default=%d)",
+            staff.employee_name, app_id, effective_level,
         )
         return False, "您尚未被授權存取此應用程式，請聯繫管理員。", []
 
     scopes = level_to_scopes(effective_level)
-    logger.info("App access granted: %s → %s effective_level=%d scopes=%s", staff.employee_name, app_id, effective_level, scopes)
+    logger.info("App access granted: %s → %s org_default_level=%d scopes=%s", staff.employee_name, app_id, effective_level, scopes)
     return True, "", scopes
 
 
@@ -389,14 +397,14 @@ async def get_user_accessible_apps(
 
     accessible = []
     for app_id, app_info in all_apps.items():
-        # Must pass org check
-        allowed, _ = _check_org_access(staff, app_info)
-        if not allowed:
-            continue
-
         if app_id in personal_perms:
+            # 有明確個人權限，直接採用，不受組織限制
             effective_level = personal_perms[app_id]
         else:
+            # 無個人記錄，需通過組織檢查才能用 org default
+            allowed, _ = _check_org_access(staff, app_info)
+            if not allowed:
+                continue
             effective_level = _get_org_default_level(staff, app_info)
 
         if effective_level <= 0:
