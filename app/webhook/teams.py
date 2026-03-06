@@ -47,7 +47,7 @@ async def _send_adaptive_card(title: str, subtitle: str, facts: list[dict]) -> b
 
     proxy = settings.HTTP_PROXY or None
     try:
-        async with httpx.AsyncClient(timeout=10, proxy=proxy) as client:
+        async with httpx.AsyncClient(timeout=10, proxy=proxy, verify=False) as client:
             resp = await client.post(settings.TEAMS_WEBHOOK_URL, json=payload)
             if resp.is_success:
                 logger.info("Teams webhook 發送成功: %s", title)
