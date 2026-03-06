@@ -24,6 +24,7 @@ fi
 echo "=== 2. 部署程式碼 ==="
 mkdir -p "$APP_DIR"
 rsync -a --exclude='.git' --exclude='.venv' --exclude='__pycache__' \
+    --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' \
     "$(dirname "$0")/../" "$APP_DIR/"
 
 echo "=== 3. 安裝依賴（uv sync）==="
