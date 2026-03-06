@@ -9,6 +9,7 @@
         border-radius: 3px;
         margin-right: 3px;
     }
+    .level-0 { background: #fee2e2; color: #991b1b; }
     .level-1 { background: #ecfdf5; color: #166534; }
     .level-2 { background: #dbeafe; color: #1d4ed8; }
     .level-3 { background: #fef3c7; color: #92400e; }
@@ -57,7 +58,7 @@
                     <tr>
                         <th>使用者</th>
                         <th>應用程式</th>
-                        <th>Level<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">1=Read, 2=Read+Write, 3=Read+Write+Admin</span></span></th>
+                        <th>Level<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">0=Denied, 1=Read, 2=Read+Write, 3=Read+Write+Admin</span></span></th>
                         <th>Scopes<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">由 Level 自動對應的存取範圍，App 端用來做細粒度權限控制。</span></span></th>
                         <th>授權者</th>
                         <th></th>

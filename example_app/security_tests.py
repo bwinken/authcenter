@@ -244,9 +244,8 @@ async def test_A1(client: httpx.AsyncClient):
 @_register("A2", "A. 基本權限阻擋", "level=0 明確拒絕 → 被拒絕")
 async def test_A2(client: httpx.AsyncClient):
     _admin_action(
-        "在 Admin → 權限管理，將測試帳號的 ai_chat_app 權限設為 level 1\n"
-        "然後手動在 SQLite 中將 level 改為 0（或透過其他方式設定 level=0）\n"
-        "如果無法設定 level=0，可跳過此測試"
+        "在 Admin → 權限管理，將測試帳號的 ai_chat_app 權限設為 Level 0 (Denied)\n"
+        "（下拉選單選擇「Level 0 — Denied」）"
     )
     resp = await _login(client)
     no_redirect = resp.status_code != 303
@@ -284,10 +283,8 @@ async def test_A4(client: httpx.AsyncClient):
     _admin_action(
         "在 Admin 中：\n"
         "1. 確認測試帳號的 org_id 在 ai_report_app 的 allowed_orgs 中\n"
-        "2. 設定測試帳號對 ai_report_app 的個人權限為 level 1\n"
-        "3. 然後手動在 SQLite 中將 level 改為 0\n"
-        "（測試個人設定 level=0 是否覆蓋組織預設權限）\n"
-        "如果無法操作可跳過"
+        "2. 在權限管理中，將測試帳號對 ai_report_app 設為 Level 0 (Denied)\n"
+        "（測試個人設定 level=0 是否覆蓋組織預設權限）"
     )
     await client.get(
         f"{CONFIG['base_url']}/auth/login",
