@@ -82,7 +82,10 @@ fi
 
 echo "=== 3. 安裝依賴（uv sync）==="
 mkdir -p "$APP_DIR/.cache/uv"
-cd "$APP_DIR" && UV_CACHE_DIR="$APP_DIR/.cache/uv" uv sync
+# 避免 sudo 繼承使用者的 conda/pyenv Python（authcenter 使用者無法存取）
+# 清除 PATH 中的 conda/miniforge/pyenv 路徑，確保 uv 使用系統 Python
+CLEAN_PATH="$(echo "$PATH" | tr ':' '\n' | grep -v -E '(conda|miniforge|pyenv|virtualenv)' | tr '\n' ':')"
+cd "$APP_DIR" && PATH="$CLEAN_PATH" UV_CACHE_DIR="$APP_DIR/.cache/uv" CONDA_PREFIX="" VIRTUAL_ENV="" uv sync
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/.venv" "$APP_DIR/.cache"
 
 echo "=== 4. 產生 RSA 金鑰（如尚未存在）==="
