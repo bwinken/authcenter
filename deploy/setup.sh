@@ -12,6 +12,18 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# Proxy 設定（只需設定 http_proxy 即可，不需要則留空）
+PROXY_URL="${http_proxy:-}"
+if [ -n "$PROXY_URL" ]; then
+    export http_proxy="$PROXY_URL"
+    export HTTP_PROXY="$PROXY_URL"
+    export https_proxy="$PROXY_URL"
+    export HTTPS_PROXY="$PROXY_URL"
+    export no_proxy="localhost,127.0.0.1,*.company.local"
+    export NO_PROXY="$no_proxy"
+    echo "使用 Proxy: $PROXY_URL"
+fi
+
 if ! command -v uv &>/dev/null; then
     echo "uv 未安裝，自動安裝中..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -38,18 +50,6 @@ if [ -d "$APP_DIR" ] && [ ! -f "$APP_DIR/.env" ]; then
     echo "錯誤：$APP_DIR/.env 不存在" >&2
     echo "請先建立：cp $APP_DIR/.env.example $APP_DIR/.env && nano $APP_DIR/.env" >&2
     exit 1
-fi
-
-# Proxy 設定（只需設定 http_proxy 即可，不需要則留空）
-PROXY_URL="${http_proxy:-}"
-if [ -n "$PROXY_URL" ]; then
-    export http_proxy="$PROXY_URL"
-    export HTTP_PROXY="$PROXY_URL"
-    export https_proxy="$PROXY_URL"
-    export HTTPS_PROXY="$PROXY_URL"
-    export no_proxy="localhost,127.0.0.1,*.company.local"
-    export NO_PROXY="$no_proxy"
-    echo "使用 Proxy: $PROXY_URL"
 fi
 
 echo "=== 1. 建立系統使用者 ==="
