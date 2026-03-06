@@ -8,6 +8,10 @@ User=authcenter
 Group=authcenter
 WorkingDirectory=/opt/authcenter
 EnvironmentFile=/opt/authcenter/.env
+# 如需透過 Proxy 連外網（uv sync / webhook），取消下方註解
+# Environment="HTTP_PROXY=http://proxy.company.com:8080"
+# Environment="HTTPS_PROXY=http://proxy.company.com:8080"
+# Environment="NO_PROXY=localhost,127.0.0.1"
 ExecStart=/usr/local/bin/uv run fastapi run app/main.py \
     --host 127.0.0.1 \
     --port 8000 \

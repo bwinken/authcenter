@@ -6,6 +6,15 @@ set -e
 APP_DIR="/opt/authcenter"
 APP_USER="authcenter"
 
+# Proxy 設定（依環境修改，不需要則留空）
+PROXY_URL="${HTTP_PROXY:-}"
+if [ -n "$PROXY_URL" ]; then
+    export HTTP_PROXY="$PROXY_URL"
+    export HTTPS_PROXY="$PROXY_URL"
+    export NO_PROXY="localhost,127.0.0.1"
+    echo "使用 Proxy: $PROXY_URL"
+fi
+
 echo "=== 1. 建立系統使用者 ==="
 if ! id "$APP_USER" &>/dev/null; then
     useradd --system --no-create-home --shell /usr/sbin/nologin "$APP_USER"
