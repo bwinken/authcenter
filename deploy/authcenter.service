@@ -14,7 +14,7 @@ EnvironmentFile=/opt/authcenter/.env
 # Environment="NO_PROXY=localhost,127.0.0.1"
 ExecStart=/usr/local/bin/uv run fastapi run app/main.py \
     --host 127.0.0.1 \
-    --port 8000 \
+    --port ${APP_PORT:-8000} \
     --workers 2
 Restart=on-failure
 RestartSec=5
