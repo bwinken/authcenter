@@ -15,10 +15,15 @@
 {{ register_link_info.link }}
 
 如有問題請聯繫系統管理員。</div>
-            <button type="button" onclick="copyRegisterMsg()" class="btn btn-primary" style="margin-top: 10px; padding: 6px 14px; font-size: 13px; display: inline-flex; align-items: center; gap: 6px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                <span id="copy-btn-text">複製訊息</span>
-            </button>
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+                <button type="button" onclick="copyRegisterMsg()" class="btn btn-primary" style="padding: 6px 14px; font-size: 13px; display: inline-flex; align-items: center; gap: 6px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                    <span id="copy-btn-text">複製訊息</span>
+                </button>
+                <button type="button" onclick="this.closest('.admin-card').remove()" class="btn" style="padding: 6px 14px; font-size: 13px; background: var(--bg-secondary, #f1f5f9); color: var(--text-muted, #64748b); border: 1px solid var(--border-color, #e2e8f0);">
+                    關閉
+                </button>
+            </div>
         </div>
         <script>
         function copyRegisterMsg() {
@@ -184,7 +189,7 @@
                             <td style="font-size: 12px; color: var(--text-muted);">
                                 <span class="expires-at" data-ts="{{ p.expires_at }}"></span>
                             </td>
-                            <td>
+                            <td style="white-space: nowrap;">
                                 <form method="POST"
                                       action="/admin/generate-register-link"
                                       style="display: inline;">
@@ -196,6 +201,20 @@
                                             class="btn btn-primary"
                                             style="padding: 4px 12px; font-size: 12px;">
                                         產生註冊連結
+                                    </button>
+                                </form>
+                                <form method="POST"
+                                      action="/admin/deny-registration"
+                                      style="display: inline; margin-left: 4px;"
+                                      onsubmit="return confirm('確定要拒絕 {{ p.employee_name }} 的註冊請求？');">
+                                    {{ csrf_input(request) }}
+                                    <input type="hidden"
+                                           name="employee_name"
+                                           value="{{ p.employee_name }}">
+                                    <button type="submit"
+                                            class="btn"
+                                            style="padding: 4px 12px; font-size: 12px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;">
+                                        拒絕
                                     </button>
                                 </form>
                             </td>
