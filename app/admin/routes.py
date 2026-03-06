@@ -62,6 +62,14 @@ def _require_super(admin: dict | None) -> bool:
     return admin is not None and admin.get("is_super", False)
 
 
+def _forbidden(message: str = "您沒有權限執行此操作。") -> HTMLResponse:
+    """回傳 403 Forbidden HTML 回應。"""
+    return HTMLResponse(
+        content=f"<h1>403 Forbidden</h1><p>{message}</p>",
+        status_code=403,
+    )
+
+
 # ─── Audit Log ─────────────────────────────────────────────────
 
 async def _log_action(
@@ -94,12 +102,23 @@ async def _get_admin_apps(sqlite_session: AsyncSession, employee_name: str) -> l
     return [row[0] for row in result.fetchall()]
 
 
-async def _list_app_admins(sqlite_session: AsyncSession, app_id: str | None = None) -> list[dict]:
-    """List all app admin assignments, optionally filtered by app_id."""
+async def _list_app_admins(
+    sqlite_session: AsyncSession,
+    app_id: str | None = None,
+    app_ids: list[str] | None = None,
+) -> list[dict]:
+    """List app admin assignments, optionally filtered by app_id or app_ids list."""
     if app_id:
         result = await sqlite_session.execute(
             text("SELECT employee_name, app_id, assigned_by, assigned_at FROM app_admins WHERE app_id = :aid ORDER BY employee_name"),
             {"aid": app_id},
+        )
+    elif app_ids is not None:
+        placeholders = ", ".join(f":a{i}" for i in range(len(app_ids)))
+        params = {f"a{i}": aid for i, aid in enumerate(app_ids)}
+        result = await sqlite_session.execute(
+            text(f"SELECT employee_name, app_id, assigned_by, assigned_at FROM app_admins WHERE app_id IN ({placeholders}) ORDER BY employee_name, app_id"),
+            params,
         )
     else:
         result = await sqlite_session.execute(
@@ -318,8 +337,10 @@ async def generate_register_link(
     取代 CLI 工具，讓管理員在 Dashboard 直接產生連結。
     """
     admin = _verify_admin_cookie(admin_token)
-    if not _require_super(admin):
+    if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
+    if not admin.get("is_super"):
+        return _forbidden("僅 Super Admin 可以產生註冊連結。")
 
     settings = get_settings()
     employee_name = employee_name.strip().lower()
@@ -421,10 +442,7 @@ async def update_app(
     if not admin.get("is_super"):
         admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
         if app_id not in admin_apps:
-            return HTMLResponse(
-                content="<h1>403 Forbidden</h1><p>您沒有權限修改此 App 的設定。</p>",
-                status_code=403,
-            )
+            return _forbidden("您沒有權限修改此 App 的設定。")
 
     templates = _get_templates()
     apps = load_registered_apps()
@@ -487,10 +505,7 @@ async def create_app(
     if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
     if not admin.get("is_super"):
-        return HTMLResponse(
-            content="<h1>403 Forbidden</h1><p>僅 Super Admin 可以建立 App。</p>",
-            status_code=403,
-        )
+        return _forbidden("僅 Super Admin 可以建立 App。")
 
     templates = _get_templates()
     apps = load_registered_apps()
@@ -550,10 +565,7 @@ async def delete_app(
     if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
     if not admin.get("is_super"):
-        return HTMLResponse(
-            content="<h1>403 Forbidden</h1><p>僅 Super Admin 可以刪除 App。</p>",
-            status_code=403,
-        )
+        return _forbidden("僅 Super Admin 可以刪除 App。")
 
     templates = _get_templates()
     apps = load_registered_apps()
@@ -659,10 +671,7 @@ async def grant_permission(
     if not admin.get("is_super"):
         admin_apps = await _get_admin_apps(sqlite_session, admin_name)
         if app_id not in admin_apps:
-            return HTMLResponse(
-                content="<h1>403 Forbidden</h1><p>您沒有權限管理此 App 的權限。</p>",
-                status_code=403,
-            )
+            return _forbidden("您沒有權限管理此 App 的權限。")
 
     level = max(0, min(3, level))
 
@@ -707,10 +716,7 @@ async def revoke_permission(
     if not admin.get("is_super"):
         admin_apps = await _get_admin_apps(sqlite_session, admin_name)
         if app_id not in admin_apps:
-            return HTMLResponse(
-                content="<h1>403 Forbidden</h1><p>您沒有權限管理此 App 的權限。</p>",
-                status_code=403,
-            )
+            return _forbidden("您沒有權限管理此 App 的權限。")
 
     deleted = await service.remove_user_permission(sqlite_session, employee_name, app_id)
     if deleted:
@@ -748,9 +754,7 @@ async def admins_page(
         app_admins = await _list_app_admins(sqlite_session)
     else:
         admin_app_ids = await _get_admin_apps(sqlite_session, admin["sub"])
-        # 僅顯示自己管理的 App 的 Admin
-        all_admins = await _list_app_admins(sqlite_session)
-        app_admins = [a for a in all_admins if a["app_id"] in admin_app_ids]
+        app_admins = await _list_app_admins(sqlite_session, app_ids=admin_app_ids)
         apps = {k: v for k, v in apps.items() if k in admin_app_ids}
 
     ctx = _base_ctx(request, admin, "admins", app_admins=app_admins, apps=apps)
@@ -779,10 +783,7 @@ async def assign_app_admin(
     if not admin.get("is_super"):
         admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
         if app_id not in admin_apps:
-            return HTMLResponse(
-                content="<h1>403 Forbidden</h1><p>您沒有權限管理此 App 的 Admin。</p>",
-                status_code=403,
-            )
+            return _forbidden("您沒有權限管理此 App 的 Admin。")
 
     employee_name = service.normalize_employee_name(employee_name)
     admin_name = admin.get("sub", "")
@@ -835,10 +836,7 @@ async def remove_app_admin(
     if not admin.get("is_super"):
         admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
         if app_id not in admin_apps:
-            return HTMLResponse(
-                content="<h1>403 Forbidden</h1><p>您沒有權限管理此 App 的 Admin。</p>",
-                status_code=403,
-            )
+            return _forbidden("您沒有權限管理此 App 的 Admin。")
 
     employee_name = service.normalize_employee_name(employee_name)
     admin_name = admin.get("sub", "")
@@ -1052,8 +1050,10 @@ async def manage_users(
     支援以 employee_name 搜尋篩選。
     """
     admin = _verify_admin_cookie(admin_token)
-    if not _require_super(admin):
+    if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
+    if not admin.get("is_super"):
+        return _forbidden("僅 Super Admin 可以管理使用者帳號。")
 
     templates = _get_templates()
     users = await service.list_users(sqlite_session)
@@ -1107,8 +1107,10 @@ async def reset_user_password(
 ):
     """管理員強制重設使用者密碼（僅 Super Admin）。"""
     admin = _verify_admin_cookie(admin_token)
-    if not _require_super(admin):
+    if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
+    if not admin.get("is_super"):
+        return _forbidden("僅 Super Admin 可以重設使用者密碼。")
 
     templates = _get_templates()
     new_password = await service.admin_reset_password(sqlite_session, employee_name)
@@ -1158,8 +1160,10 @@ async def delete_user_account(
 ):
     """刪除使用者帳號及其所有權限（僅 Super Admin）。"""
     admin = _verify_admin_cookie(admin_token)
-    if not _require_super(admin):
+    if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
+    if not admin.get("is_super"):
+        return _forbidden("僅 Super Admin 可以刪除使用者帳號。")
 
     deleted = await service.delete_user(sqlite_session, employee_name)
 
