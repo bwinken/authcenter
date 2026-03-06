@@ -26,6 +26,7 @@ mkdir -p "$APP_DIR"
 rsync -a --exclude='.git' --exclude='.venv' --exclude='__pycache__' \
     --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' \
     --exclude='config/apps.yaml' \
+    --exclude='keys/' --exclude='.env' \
     "$(dirname "$0")/../" "$APP_DIR/"
 
 mkdir -p "$APP_DIR/config"
