@@ -484,8 +484,13 @@ async def create_app(
     新增成功後顯示明文 secret 一次（此後無法再次查看）。
     """
     admin = _verify_admin_cookie(admin_token)
-    if not _require_super(admin):
+    if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
+    if not admin.get("is_super"):
+        return HTMLResponse(
+            content="<h1>403 Forbidden</h1><p>僅 Super Admin 可以建立 App。</p>",
+            status_code=403,
+        )
 
     templates = _get_templates()
     apps = load_registered_apps()
@@ -542,8 +547,13 @@ async def delete_app(
     刪除後該 App 的 OAuth flow 將無法使用。已存在的 per-user 權限不會自動刪除。
     """
     admin = _verify_admin_cookie(admin_token)
-    if not _require_super(admin):
+    if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
+    if not admin.get("is_super"):
+        return HTMLResponse(
+            content="<h1>403 Forbidden</h1><p>僅 Super Admin 可以刪除 App。</p>",
+            status_code=403,
+        )
 
     templates = _get_templates()
     apps = load_registered_apps()
