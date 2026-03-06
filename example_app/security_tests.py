@@ -319,12 +319,13 @@ async def test_B1(client: httpx.AsyncClient):
         return
     print(f"  {DIM}已取得 auth code: {code[:16]}...{RESET}")
     _admin_action(
-        "現在立刻到 Admin → 權限管理，撤銷測試帳號對 ai_chat_app 的權限\n"
+        "現在立刻到 Admin → 權限管理，將測試帳號的 ai_chat_app 權限改為 Level 0 (Denied)\n"
+        "（注意：用 Level 0 而非撤銷，因為撤銷會 fallback 到組織預設權限）\n"
         "（完成後按 Enter，腳本會嘗試用剛才的 auth code 換 token）"
     )
     resp = await _exchange_token(client, code)
     denied = resp.status_code == 403
-    _print_result("B1", "登入後撤銷權限 → token exchange 失敗",
+    _print_result("B1", "登入後設為 Level 0 → token exchange 失敗",
                   denied, f"status={resp.status_code}, body={resp.text[:100]}")
 
 
