@@ -1,16 +1,11 @@
 #!/bin/bash
-# AuthCenter 部署腳本
-# 用法: sudo bash deploy/setup.sh
+# AuthCenter 部署腳本（User-Level）
+# 用法: bash deploy/setup.sh
+# 部署到 ~/authcenter，以當前使用者身份執行（不需要 sudo）
 set -e
 
-APP_DIR="/opt/authcenter"
-APP_USER="authcenter"
-
-# === 前置檢查 ===
-if [ "$(id -u)" -ne 0 ]; then
-    echo "錯誤：請使用 sudo 執行此腳本" >&2
-    exit 1
-fi
+APP_DIR="$HOME/authcenter"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Proxy 設定（只需設定 http_proxy 即可，不需要則留空）
 PROXY_URL="${http_proxy:-}"
@@ -24,6 +19,7 @@ if [ -n "$PROXY_URL" ]; then
     echo "使用 Proxy: $PROXY_URL"
 fi
 
+# === 前置檢查 ===
 if ! command -v uv &>/dev/null; then
     echo "uv 未安裝，自動安裝中..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -35,44 +31,13 @@ if ! command -v uv &>/dev/null; then
     echo "uv 已安裝：$(uv --version)"
 fi
 
-# 確保 uv 在系統路徑（systemd service 以非 root 使用者執行，需要可存取的路徑）
-UV_PATH="$(command -v uv)"
-if [ -n "$UV_PATH" ] && [ "$UV_PATH" != "/usr/local/bin/uv" ]; then
-    cp "$UV_PATH" /usr/local/bin/uv
-    chmod 755 /usr/local/bin/uv
-    echo "已複製 uv 到 /usr/local/bin/uv"
-fi
-
-if ! command -v rsync &>/dev/null; then
-    echo "錯誤：找不到 rsync，請先安裝（apt install rsync）" >&2
-    exit 1
-fi
-
-if ! command -v nginx &>/dev/null; then
-    echo "錯誤：找不到 nginx，請先安裝（apt install nginx）" >&2
-    exit 1
-fi
-
-# 首次部署時提醒建立 .env
-if [ -d "$APP_DIR" ] && [ ! -f "$APP_DIR/.env" ]; then
-    echo "錯誤：$APP_DIR/.env 不存在" >&2
-    echo "請先建立：cp $APP_DIR/.env.example $APP_DIR/.env && nano $APP_DIR/.env" >&2
-    exit 1
-fi
-
-echo "=== 1. 建立系統使用者 ==="
-if ! id "$APP_USER" &>/dev/null; then
-    useradd --system --no-create-home --shell /usr/sbin/nologin "$APP_USER"
-    echo "使用者 $APP_USER 已建立"
-fi
-
-echo "=== 2. 部署程式碼 ==="
+echo "=== 1. 部署程式碼 ==="
 mkdir -p "$APP_DIR"
 rsync -a --exclude='.git' --exclude='.venv' --exclude='__pycache__' \
     --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' \
     --exclude='config/apps.yaml' \
     --exclude='keys/' --exclude='.env' \
-    "$(dirname "$0")/../" "$APP_DIR/"
+    "$SCRIPT_DIR/" "$APP_DIR/"
 
 mkdir -p "$APP_DIR/config"
 if [ ! -f "$APP_DIR/config/apps.yaml" ]; then
@@ -80,20 +45,15 @@ if [ ! -f "$APP_DIR/config/apps.yaml" ]; then
     echo "已建立空的 apps.yaml（透過管理後台註冊 App）"
 fi
 
-echo "=== 3. 安裝依賴（uv sync）==="
-mkdir -p "$APP_DIR/.cache/uv"
-# 避免 sudo 繼承使用者的 conda/pyenv Python（authcenter 使用者無法存取）
-# 清除 PATH 中的 conda/miniforge/pyenv 路徑，確保 uv 使用系統 Python
-CLEAN_PATH="$(echo "$PATH" | tr ':' '\n' | grep -v -E '(conda|miniforge|pyenv|virtualenv)' | tr '\n' ':')"
-cd "$APP_DIR" && PATH="$CLEAN_PATH" UV_CACHE_DIR="$APP_DIR/.cache/uv" CONDA_PREFIX="" VIRTUAL_ENV="" uv sync
-chown -R "$APP_USER:$APP_USER" "$APP_DIR/.venv" "$APP_DIR/.cache"
+echo "=== 2. 安裝依賴（uv sync）==="
+cd "$APP_DIR" && uv sync
 
-echo "=== 4. 產生 RSA 金鑰（如尚未存在）==="
+echo "=== 3. 產生 RSA 金鑰（如尚未存在）==="
 if [ ! -f "$APP_DIR/keys/private.pem" ]; then
     cd "$APP_DIR" && uv run python generate_keys.py
 fi
 
-echo "=== 5. 設定檔案權限 ==="
+echo "=== 4. 檢查 .env ==="
 if [ ! -f "$APP_DIR/.env" ]; then
     echo ""
     echo "警告：$APP_DIR/.env 尚未建立，跳過服務啟動。" >&2
@@ -103,25 +63,40 @@ if [ ! -f "$APP_DIR/.env" ]; then
     echo "  3. 重新執行此腳本" >&2
     exit 1
 fi
-chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 chmod 600 "$APP_DIR/.env"
 chmod 600 "$APP_DIR/keys/"*.pem
 
-echo "=== 6. 安裝 systemd service ==="
-cp "$APP_DIR/deploy/authcenter.service" /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable authcenter
-systemctl restart authcenter
+echo "=== 5. 安裝 user-level systemd service ==="
+mkdir -p "$HOME/.config/systemd/user"
+cp "$APP_DIR/deploy/authcenter.service" "$HOME/.config/systemd/user/"
+systemctl --user daemon-reload
+systemctl --user enable authcenter
+systemctl --user restart authcenter
 
-echo "=== 7. 安裝 nginx 設定 ==="
-cp "$APP_DIR/deploy/authcenter.nginx.conf" /etc/nginx/sites-available/authcenter
-ln -sf /etc/nginx/sites-available/authcenter /etc/nginx/sites-enabled/authcenter
-nginx -t && systemctl reload nginx
+# 確保使用者登出後服務仍繼續執行
+echo "=== 6. 啟用 lingering（登出後保持服務執行）==="
+sudo loginctl enable-linger "$(whoami)" 2>/dev/null || \
+    echo "提醒：需要 sudo 執行 loginctl enable-linger $(whoami) 以確保登出後服務持續運行"
+
+echo "=== 7. 安裝 nginx 設定（需要 sudo）==="
+if command -v nginx &>/dev/null; then
+    sed "s|__APP_DIR__|$APP_DIR|g" "$APP_DIR/deploy/authcenter.nginx.conf" \
+        | sudo tee /etc/nginx/sites-available/authcenter > /dev/null
+    sudo ln -sf /etc/nginx/sites-available/authcenter /etc/nginx/sites-enabled/authcenter
+    sudo nginx -t && sudo systemctl reload nginx
+else
+    echo "提醒：nginx 未安裝，請手動設定反向代理"
+fi
 
 echo ""
 echo "=== 部署完成 ==="
+echo "應用目錄：$APP_DIR"
+echo "服務管理："
+echo "  systemctl --user status authcenter    # 查看狀態"
+echo "  systemctl --user restart authcenter   # 重啟"
+echo "  journalctl --user -u authcenter -f    # 查看日誌"
+echo ""
 echo "請確認："
-echo "  1. 已建立 /opt/authcenter/.env（參考 .env.example）"
+echo "  1. 已建立 $APP_DIR/.env（參考 .env.example）"
 echo "  2. 已設定 AUTH_CENTER_BASE_URL 為實際網址"
 echo "  3. 已修改 nginx 設定中的 server_name 為實際域名"
-echo "  4. systemctl status authcenter 檢查服務狀態"
