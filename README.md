@@ -221,6 +221,12 @@ fastapi dev app/main.py
 
 # 正式部署
 fastapi run app/main.py
+
+# 一鍵部署（建立使用者、安裝依賴、設定 systemd + nginx）
+sudo bash deploy/setup.sh
+
+# 內網需透過 Proxy 時，帶入 http_proxy 執行
+http_proxy="http://proxy.company.local:8080" sudo -E bash deploy/setup.sh
 ```
 
 啟動後：
