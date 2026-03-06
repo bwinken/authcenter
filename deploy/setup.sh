@@ -25,7 +25,14 @@ echo "=== 2. 部署程式碼 ==="
 mkdir -p "$APP_DIR"
 rsync -a --exclude='.git' --exclude='.venv' --exclude='__pycache__' \
     --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' \
+    --exclude='config/apps.yaml' \
     "$(dirname "$0")/../" "$APP_DIR/"
+
+mkdir -p "$APP_DIR/config"
+if [ ! -f "$APP_DIR/config/apps.yaml" ]; then
+    echo "apps: {}" > "$APP_DIR/config/apps.yaml"
+    echo "已建立空的 apps.yaml（透過管理後台註冊 App）"
+fi
 
 echo "=== 3. 安裝依賴（uv sync）==="
 cd "$APP_DIR" && uv sync
