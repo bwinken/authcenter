@@ -88,6 +88,8 @@ if [ ! -f "$APP_DIR/keys/private.pem" ]; then
     cd "$APP_DIR" && uv run python generate_keys.py
 fi
 
+mkdir -p "$APP_DIR/.cache/uv"
+
 echo "=== 5. 設定檔案權限 ==="
 if [ ! -f "$APP_DIR/.env" ]; then
     echo ""
