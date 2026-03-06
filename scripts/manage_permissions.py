@@ -22,8 +22,8 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DB = os.getenv("SQLITE_PATH", str(BASE_DIR / "auth_local.db"))
 
-VALID_LEVELS = {1: "Read", 2: "Read + Write", 3: "Full Admin"}
-LEVEL_SCOPE_MAP = {1: ["read"], 2: ["read", "write"], 3: ["read", "write", "admin"]}
+VALID_LEVELS = {0: "Denied", 1: "Read", 2: "Read + Write", 3: "Full Admin"}
+LEVEL_SCOPE_MAP = {0: [], 1: ["read"], 2: ["read", "write"], 3: ["read", "write", "admin"]}
 
 
 async def grant(employee_name: str, app_id: str, level: int, granted_by: str, db_path: str) -> None:
@@ -121,8 +121,8 @@ def main():
     grant_parser = subparsers.add_parser("grant", help="Grant permission to a user for an app")
     grant_parser.add_argument("employee_name", help="Employee name (e.g. kane.beh)")
     grant_parser.add_argument("app_id", help="App ID (e.g. ai_chat_app)")
-    grant_parser.add_argument("--level", required=True, type=int, choices=[1, 2, 3],
-                              help="Permission level: 1=Read, 2=Read+Write, 3=Full Admin")
+    grant_parser.add_argument("--level", required=True, type=int, choices=[0, 1, 2, 3],
+                              help="Permission level: 0=Denied, 1=Read, 2=Read+Write, 3=Full Admin")
     grant_parser.add_argument("--granted-by", default="", help="Admin name who granted this")
     grant_parser.add_argument("--db", default=DEFAULT_DB, help=f"SQLite database path (default: {DEFAULT_DB})")
 

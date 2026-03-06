@@ -137,6 +137,7 @@ async def extend_registration_token(
 # ─── Level → Scopes Mapping ─────────────────────────────────
 
 LEVEL_SCOPE_MAP = {
+    0: [],
     1: ["read"],
     2: ["read", "write"],
     3: ["read", "write", "admin"],
@@ -425,7 +426,7 @@ async def set_user_level(
     從 level 3 降級時自動移除 auto_assigned 的 App Admin 記錄。
     """
     employee_name = normalize_employee_name(employee_name)
-    level = max(1, min(3, level))
+    level = max(0, min(3, level))
     await sqlite_session.execute(
         text(
             "INSERT INTO user_app_permissions (employee_name, app_id, level, granted_by) "

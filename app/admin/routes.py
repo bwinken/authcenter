@@ -19,7 +19,7 @@ from app.auth.jwt_handler import create_token, verify_token
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-VALID_LEVELS = {1: "Read", 2: "Read + Write", 3: "Full Admin"}
+VALID_LEVELS = {0: "Denied", 1: "Read", 2: "Read + Write", 3: "Full Admin"}
 ADMIN_TOKEN_HOURS = 2
 
 
@@ -648,7 +648,7 @@ async def grant_permission(
         if app_id not in admin_apps:
             return RedirectResponse("/admin/permissions", status_code=303)
 
-    level = max(1, min(3, level))
+    level = max(0, min(3, level))
 
     apps = load_registered_apps()
     if app_id not in apps:
