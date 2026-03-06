@@ -67,7 +67,7 @@ def validate_password(password: str, employee_name: str = "") -> str:
 
 
 # ─── Registration Tokens (SQLite-backed) ─────────────────────
-REGISTRATION_TOKEN_TTL = 600           # 10 minutes (login → register-request flow)
+REGISTRATION_TOKEN_TTL = 86400         # 24 hours (login → register-request flow)
 ADMIN_REGISTRATION_TOKEN_TTL = 86400   # 24 hours (admin-generated link)
 
 
@@ -123,7 +123,7 @@ async def invalidate_registration_token(
 
 
 async def extend_registration_token(
-    sqlite_session: AsyncSession, token: str, ttl: int = 172800
+    sqlite_session: AsyncSession, token: str, ttl: int = 86400
 ) -> None:
     """延長 registration token 的有效期，讓管理員在 Dashboard 看到待處理請求。"""
     new_expires = time.time() + ttl

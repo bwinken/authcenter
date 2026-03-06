@@ -289,8 +289,8 @@ async def request_register_submit(
     if app_info:
         app_name = app_info.get("name", app_name)
 
-    # Extend token TTL to 48 hours so admin can see it on Dashboard
-    await service.extend_registration_token(sqlite_session, token, ttl=172800)
+    # Extend token TTL to 24 hours so admin can see it on Dashboard
+    await service.extend_registration_token(sqlite_session, token, ttl=86400)
 
     # Send webhook notification to admin (best-effort, admin can also check Dashboard)
     sent = await send_registration_request_notification(staff, app_name)
