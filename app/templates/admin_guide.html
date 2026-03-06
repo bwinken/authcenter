@@ -206,6 +206,46 @@
     </div>
 
     {% if is_super %}
+    <!-- App 串接指南 -->
+    <div class="admin-card guide-section">
+        <h3>
+            <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+            App 串接指南
+        </h3>
+        <p>其他 App 串接 AuthCenter 時需要以下資訊：</p>
+        <ul>
+            <li><strong>Client ID &amp; Secret</strong>：在「App 管理」新增 App 時取得</li>
+            <li><strong>OAuth 流程</strong>：App 將使用者導向 <code>/auth/login?app_id=xxx&amp;redirect_uri=xxx</code>，登入成功後 AuthCenter 帶 <code>?code=xxx</code> 回 redirect_uri，App 後端再用 <code>POST /auth/token</code> 換取 JWT</li>
+            <li><strong>公鑰取得</strong>：App 可透過 <code>GET /auth/.well-known/public-key</code> 自動取得 RS256 公鑰來驗證 JWT，不需手動複製檔案</li>
+        </ul>
+        <div class="guide-tip">
+            <strong>App 端驗證 JWT 範例：</strong><br>
+            <code>resp = httpx.get("{{ auth_center_base_url }}/auth/.well-known/public-key")</code><br>
+            <code>public_key = resp.json()["public_key"]</code><br>
+            <code>payload = jwt.decode(token, public_key, algorithms=["RS256"], audience="your-app-id")</code>
+        </div>
+    </div>
+
+    <!-- Super Admin 管理 -->
+    <div class="admin-card guide-section">
+        <h3>
+            <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+            Super Admin 管理
+        </h3>
+        <p>Super Admin 有兩種登入方式，皆在 <code>.env</code> 設定：</p>
+        <ul>
+            <li><strong>固定帳密</strong>：<code>ADMIN_USERNAME</code> / <code>ADMIN_PASSWORD</code>，適合初始設定或緊急存取</li>
+            <li><strong>員工帳號</strong>：在 <code>SUPER_ADMIN_EMPLOYEES</code> 加入員工名稱（逗號分隔），該員工用自己的密碼即可登入管理後台</li>
+        </ul>
+        <p>新增 Super Admin 步驟：</p>
+        <ul>
+            <li>編輯 <code>/opt/authcenter/.env</code>，在 <code>SUPER_ADMIN_EMPLOYEES</code> 加入員工名稱，例如：<code>SUPER_ADMIN_EMPLOYEES=kane.beh,john.doe,new.admin</code></li>
+            <li>重啟服務：<code>sudo systemctl restart authcenter</code></li>
+            <li>該員工必須已有 AuthCenter 帳號（已完成註冊）</li>
+        </ul>
+        <div class="guide-warn">Super Admin 擁有系統最高權限，請謹慎授予。建議定期檢視 <code>SUPER_ADMIN_EMPLOYEES</code> 名單，移除不再需要的管理員。</div>
+    </div>
+
     <!-- 操作紀錄 -->
     <div class="admin-card guide-section">
         <h3>
