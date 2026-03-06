@@ -12,6 +12,8 @@ EnvironmentFile=/opt/authcenter/.env
 # Environment="HTTP_PROXY=http://proxy.company.com:8080"
 # Environment="HTTPS_PROXY=http://proxy.company.com:8080"
 # Environment="NO_PROXY=localhost,127.0.0.1"
+Environment="UV_CACHE_DIR=/opt/authcenter/.cache/uv"
+Environment="HOME=/opt/authcenter"
 ExecStart=/usr/local/bin/uv run fastapi run app/main.py \
     --host 127.0.0.1 \
     --port ${APP_PORT:-8000} \
