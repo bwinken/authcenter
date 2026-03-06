@@ -421,7 +421,10 @@ async def update_app(
     if not admin.get("is_super"):
         admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
         if app_id not in admin_apps:
-            return RedirectResponse("/admin/permissions", status_code=303)
+            return HTMLResponse(
+                content="<h1>403 Forbidden</h1><p>您沒有權限修改此 App 的設定。</p>",
+                status_code=403,
+            )
 
     templates = _get_templates()
     apps = load_registered_apps()
@@ -646,7 +649,10 @@ async def grant_permission(
     if not admin.get("is_super"):
         admin_apps = await _get_admin_apps(sqlite_session, admin_name)
         if app_id not in admin_apps:
-            return RedirectResponse("/admin/permissions", status_code=303)
+            return HTMLResponse(
+                content="<h1>403 Forbidden</h1><p>您沒有權限管理此 App 的權限。</p>",
+                status_code=403,
+            )
 
     level = max(0, min(3, level))
 
@@ -691,7 +697,10 @@ async def revoke_permission(
     if not admin.get("is_super"):
         admin_apps = await _get_admin_apps(sqlite_session, admin_name)
         if app_id not in admin_apps:
-            return RedirectResponse("/admin/permissions", status_code=303)
+            return HTMLResponse(
+                content="<h1>403 Forbidden</h1><p>您沒有權限管理此 App 的權限。</p>",
+                status_code=403,
+            )
 
     deleted = await service.remove_user_permission(sqlite_session, employee_name, app_id)
     if deleted:
@@ -713,18 +722,27 @@ async def admins_page(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """App Admin 管理頁面（僅 Super Admin）。
+    """App Admin 管理頁面（Super Admin 或 App Admin）。
 
-    列出所有已指定的 App Admin（員工名稱、負責的 app、指定者、指定時間），
-    並提供指定新 App Admin 的表單。
+    Super Admin：列出所有已指定的 App Admin。
+    App Admin：僅列出自己管理的 App 的 Admin，且只能指派/移除自己管理的 App。
     """
     admin = _verify_admin_cookie(admin_token)
-    if not _require_super(admin):
+    if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
 
     templates = _get_templates()
-    app_admins = await _list_app_admins(sqlite_session)
     apps = load_registered_apps()
+
+    if admin.get("is_super"):
+        app_admins = await _list_app_admins(sqlite_session)
+    else:
+        admin_app_ids = await _get_admin_apps(sqlite_session, admin["sub"])
+        # 僅顯示自己管理的 App 的 Admin
+        all_admins = await _list_app_admins(sqlite_session)
+        app_admins = [a for a in all_admins if a["app_id"] in admin_app_ids]
+        apps = {k: v for k, v in apps.items() if k in admin_app_ids}
+
     ctx = _base_ctx(request, admin, "admins", app_admins=app_admins, apps=apps)
     return templates.TemplateResponse("admin_admins.html", ctx)
 
@@ -737,14 +755,24 @@ async def assign_app_admin(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """指定員工為某 App 的 App Admin（僅 Super Admin）。
+    """指定員工為某 App 的 App Admin（Super Admin 或該 App 的 App Admin）。
 
     將 employee_name + app_id 寫入 app_admins 表。若已存在則更新 assigned_by 與時間。
+    App Admin 僅能指派自己管理的 App，嘗試指派其他 App 會回傳 403。
     操作完成後記錄 audit log。
     """
     admin = _verify_admin_cookie(admin_token)
-    if not _require_super(admin):
+    if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
+
+    # App Admin 僅能指派自己管理的 App
+    if not admin.get("is_super"):
+        admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
+        if app_id not in admin_apps:
+            return HTMLResponse(
+                content="<h1>403 Forbidden</h1><p>您沒有權限管理此 App 的 Admin。</p>",
+                status_code=403,
+            )
 
     employee_name = service.normalize_employee_name(employee_name)
     admin_name = admin.get("sub", "")
@@ -783,14 +811,24 @@ async def remove_app_admin(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """移除某員工的 App Admin 身份（僅 Super Admin）。
+    """移除某員工的 App Admin 身份（Super Admin 或該 App 的 App Admin）。
 
     從 app_admins 表刪除對應記錄，該員工將無法再以 App Admin 身份登入管理該 app。
+    App Admin 僅能移除自己管理的 App 的 Admin，嘗試操作其他 App 會回傳 403。
     操作完成後記錄 audit log。
     """
     admin = _verify_admin_cookie(admin_token)
-    if not _require_super(admin):
+    if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
+
+    # App Admin 僅能移除自己管理的 App 的 Admin
+    if not admin.get("is_super"):
+        admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
+        if app_id not in admin_apps:
+            return HTMLResponse(
+                content="<h1>403 Forbidden</h1><p>您沒有權限管理此 App 的 Admin。</p>",
+                status_code=403,
+            )
 
     employee_name = service.normalize_employee_name(employee_name)
     admin_name = admin.get("sub", "")
