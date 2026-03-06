@@ -6,6 +6,34 @@ set -e
 APP_DIR="/opt/authcenter"
 APP_USER="authcenter"
 
+# === 前置檢查 ===
+if [ "$(id -u)" -ne 0 ]; then
+    echo "錯誤：請使用 sudo 執行此腳本" >&2
+    exit 1
+fi
+
+if ! command -v uv &>/dev/null; then
+    echo "錯誤：找不到 uv，請先安裝 uv (https://docs.astral.sh/uv/)" >&2
+    exit 1
+fi
+
+if ! command -v rsync &>/dev/null; then
+    echo "錯誤：找不到 rsync，請先安裝（apt install rsync）" >&2
+    exit 1
+fi
+
+if ! command -v nginx &>/dev/null; then
+    echo "錯誤：找不到 nginx，請先安裝（apt install nginx）" >&2
+    exit 1
+fi
+
+# 首次部署時提醒建立 .env
+if [ -d "$APP_DIR" ] && [ ! -f "$APP_DIR/.env" ]; then
+    echo "錯誤：$APP_DIR/.env 不存在" >&2
+    echo "請先建立：cp $APP_DIR/.env.example $APP_DIR/.env && nano $APP_DIR/.env" >&2
+    exit 1
+fi
+
 # Proxy 設定（依環境修改，不需要則留空）
 PROXY_URL="${HTTP_PROXY:-}"
 if [ -n "$PROXY_URL" ]; then
@@ -44,6 +72,15 @@ if [ ! -f "$APP_DIR/keys/private.pem" ]; then
 fi
 
 echo "=== 5. 設定檔案權限 ==="
+if [ ! -f "$APP_DIR/.env" ]; then
+    echo ""
+    echo "警告：$APP_DIR/.env 尚未建立，跳過服務啟動。" >&2
+    echo "請執行以下步驟完成部署：" >&2
+    echo "  1. cp $APP_DIR/.env.example $APP_DIR/.env" >&2
+    echo "  2. nano $APP_DIR/.env  （填入實際設定）" >&2
+    echo "  3. 重新執行此腳本" >&2
+    exit 1
+fi
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 chmod 600 "$APP_DIR/.env"
 chmod 600 "$APP_DIR/keys/"*.pem
