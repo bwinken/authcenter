@@ -9,8 +9,9 @@ Rate Limiting、CSRF 防護、時序攻擊等。
 使用方式：
     1. 確保 Auth Center 已啟動 (預設 http://localhost:8000)
     2. 確保 apps.yaml 中 ai_chat_app / test_app 已註冊
-    3. 確保至少一個測試帳號已註冊（填入下方 CONFIG）
-    4. 執行:
+    3. 確保至少一個測試帳號已註冊
+    4. 設定 example_app/.env（與 example_app 共用，測試專用項目見 .env.example）
+    5. 執行:
        python example_app/security_tests.py              # 全部測試
        python example_app/security_tests.py A             # 只跑 A 類
        python example_app/security_tests.py A B C         # 跑 A, B, C 類
@@ -20,34 +21,41 @@ Rate Limiting、CSRF 防護、時序攻擊等。
 """
 
 import asyncio
+import os
 import sys
 import time
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+from dotenv import load_dotenv
 
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  測試設定 — 請依照你的環境修改                                ║
+# ║  測試設定 — 從 example_app/.env 載入                         ║
 # ╚══════════════════════════════════════════════════════════════╝
 
+# 載入 example_app/.env（相對於此腳本所在目錄）
+_env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(_env_path)
+
 CONFIG = {
-    # Auth Center
-    "base_url": "http://localhost:8000",
-    # 已註冊的測試帳號（必須已存在於 MSSQL 員工名單 + 已在 Auth Center 註冊）
-    "test_user": "testuser",
-    "test_password": "Test1234",
-    # 主要測試 App（apps.yaml 中已註冊）
-    "app_id": "ai_chat_app",
-    "client_secret": "chat_secret_123",
-    "redirect_uri": "http://localhost:8001/auth/callback",
-    # 第二個 App（用於跨 App 測試）
-    "app2_id": "test_app",
-    "app2_secret": "test_secret",
-    "app2_redirect": "http://localhost:8001/callback",
-    # 限定組織的 App（若有）
-    "org_restricted_app_id": "ai_report_app",
-    "org_restricted_secret": "report_secret_456",
-    "org_restricted_redirect": "http://localhost:8002/auth/callback",
+    # Auth Center（從 .env 的 AUTH_CENTER_BASE_URL）
+    "base_url": os.getenv("AUTH_CENTER_BASE_URL", "http://localhost:8000"),
+    # 測試帳號（從 .env 的 TEST_USER / TEST_PASSWORD）
+    "test_user": os.getenv("TEST_USER", "testuser"),
+    "test_password": os.getenv("TEST_PASSWORD", "Test1234"),
+    # 主要測試 App（從 .env 的 APP_ID / CLIENT_SECRET / REDIRECT_URI）
+    "app_id": os.getenv("APP_ID", "ai_chat_app"),
+    "client_secret": os.getenv("CLIENT_SECRET", "chat_secret_123"),
+    "redirect_uri": os.getenv("REDIRECT_URI", "http://localhost:8001/auth/callback"),
+    # 第二個 App（用於跨 App 測試，只需在 apps.yaml 註冊，不需部署）
+    "app2_id": os.getenv("APP2_ID", "test_app"),
+    "app2_secret": os.getenv("APP2_SECRET", "test_secret"),
+    "app2_redirect": os.getenv("APP2_REDIRECT", "http://localhost:8001/callback"),
+    # 限定組織的 App（若有，只需在 apps.yaml 註冊，不需部署）
+    "org_restricted_app_id": os.getenv("ORG_RESTRICTED_APP_ID", "ai_report_app"),
+    "org_restricted_secret": os.getenv("ORG_RESTRICTED_SECRET", "report_secret_456"),
+    "org_restricted_redirect": os.getenv("ORG_RESTRICTED_REDIRECT", "http://localhost:8002/auth/callback"),
 }
 
 # ╔══════════════════════════════════════════════════════════════╗
