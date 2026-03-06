@@ -238,6 +238,9 @@
                                             id="addsel_{{ aid }}"
                                             onchange="addOrg('{{ aid }}', this)">
                                         <option value="">+ 新增</option>
+                                        {% if available_orgs %}
+                                            <option value="__ALL__">全部組織</option>
+                                        {% endif %}
                                         {% for org in available_orgs %}
                                             <option value="{{ org }}"
                                                     {% if org in info.get('allowed_orgs', []) %}disabled{% endif %}>{{ org }}</option>
@@ -391,15 +394,30 @@
         var org = selectEl.value;
         if (!org) return;
 
+        // 「全部組織」：把所有未加入的組織一次加進去
+        if (org === '__ALL__') {
+            var opts = selectEl.querySelectorAll('option');
+            for (var i = 0; i < opts.length; i++) {
+                var val = opts[i].value;
+                if (val && val !== '__ALL__' && !opts[i].disabled) {
+                    addSingleOrg(appId, val, selectEl);
+                }
+            }
+            selectEl.value = '';
+            return;
+        }
+
+        addSingleOrg(appId, org, selectEl);
+        selectEl.value = '';
+    }
+
+    function addSingleOrg(appId, org, selectEl) {
         var picker = document.getElementById('picker_' + appId);
         var hidden = document.getElementById('hidden_orgs_' + appId);
         var hint = document.getElementById('hint_' + appId);
 
         var current = hidden.value ? hidden.value.split(',').filter(Boolean) : [];
-        if (current.indexOf(org) !== -1) {
-            selectEl.value = '';
-            return;
-        }
+        if (current.indexOf(org) !== -1) return;
 
         var tag = document.createElement('span');
         tag.className = 'org-tag';
@@ -417,7 +435,6 @@
         if (opt) opt.disabled = true;
 
         hint.style.display = 'none';
-        selectEl.value = '';
         checkOrgLevelWarn(appId);
     }
     // 頁面載入時檢查 & 監聽 default_level 變更
