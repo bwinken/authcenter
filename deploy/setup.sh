@@ -13,8 +13,14 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if ! command -v uv &>/dev/null; then
-    echo "錯誤：找不到 uv，請先安裝 uv (https://docs.astral.sh/uv/)" >&2
-    exit 1
+    echo "uv 未安裝，自動安裝中..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! command -v uv &>/dev/null; then
+        echo "錯誤：uv 自動安裝失敗，請手動安裝 (https://docs.astral.sh/uv/)" >&2
+        exit 1
+    fi
+    echo "uv 已安裝：$(uv --version)"
 fi
 
 if ! command -v rsync &>/dev/null; then
