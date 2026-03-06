@@ -642,6 +642,22 @@ async def get_pending_registrations(sqlite_session: AsyncSession) -> list[dict]:
     ]
 
 
+async def deny_pending_registration(
+    sqlite_session: AsyncSession, employee_name: str
+) -> bool:
+    """拒絕待處理的註冊請求，刪除該員工所有 registration tokens。回傳是否有刪除記錄。"""
+    employee_name = normalize_employee_name(employee_name)
+    result = await sqlite_session.execute(
+        text("DELETE FROM registration_tokens WHERE employee_name = :ename"),
+        {"ename": employee_name},
+    )
+    await sqlite_session.commit()
+    deleted = result.rowcount > 0
+    if deleted:
+        logger.info("Registration denied for %s", employee_name)
+    return deleted
+
+
 async def cleanup_expired_tokens(sqlite_session: AsyncSession) -> None:
     """Remove expired auth codes and registration tokens. Called by background task."""
     result1 = await sqlite_session.execute(

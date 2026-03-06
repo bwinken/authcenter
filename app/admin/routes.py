@@ -383,6 +383,31 @@ async def generate_register_link(
     return templates.TemplateResponse("admin_dashboard.html", ctx)
 
 
+@router.post("/deny-registration")
+async def deny_registration(
+    request: Request,
+    employee_name: str = Form(...),
+    admin_token: str | None = Cookie(default=None),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """管理員拒絕待處理的註冊請求，刪除該員工的 registration tokens。"""
+    admin = _verify_admin_cookie(admin_token)
+    if admin is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    if not admin.get("is_super"):
+        return _forbidden("僅 Super Admin 可以拒絕註冊請求。")
+
+    employee_name = employee_name.strip().lower()
+    await service.deny_pending_registration(sqlite_session, employee_name)
+
+    await _log_action(
+        sqlite_session, admin["sub"], "deny_registration",
+        target=employee_name, details="registration request denied",
+    )
+
+    return RedirectResponse("/admin/dashboard", status_code=303)
+
+
 # ═══════════════════════════════════════════════════════════════
 # APP MANAGEMENT (Super Admin only)
 # ═══════════════════════════════════════════════════════════════
