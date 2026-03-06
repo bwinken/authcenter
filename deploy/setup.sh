@@ -35,11 +35,12 @@ if ! command -v uv &>/dev/null; then
     echo "uv 已安裝：$(uv --version)"
 fi
 
-# 確保 uv 在系統路徑（systemd service 需要固定路徑）
+# 確保 uv 在系統路徑（systemd service 以非 root 使用者執行，需要可存取的路徑）
 UV_PATH="$(command -v uv)"
 if [ -n "$UV_PATH" ] && [ "$UV_PATH" != "/usr/local/bin/uv" ]; then
-    ln -sf "$UV_PATH" /usr/local/bin/uv
-    echo "已建立 symlink: /usr/local/bin/uv -> $UV_PATH"
+    cp "$UV_PATH" /usr/local/bin/uv
+    chmod 755 /usr/local/bin/uv
+    echo "已複製 uv 到 /usr/local/bin/uv"
 fi
 
 if ! command -v rsync &>/dev/null; then
