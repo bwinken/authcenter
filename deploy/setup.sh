@@ -35,6 +35,13 @@ if ! command -v uv &>/dev/null; then
     echo "uv 已安裝：$(uv --version)"
 fi
 
+# 確保 uv 在系統路徑（systemd service 需要固定路徑）
+UV_PATH="$(command -v uv)"
+if [ -n "$UV_PATH" ] && [ "$UV_PATH" != "/usr/local/bin/uv" ]; then
+    ln -sf "$UV_PATH" /usr/local/bin/uv
+    echo "已建立 symlink: /usr/local/bin/uv -> $UV_PATH"
+fi
+
 if ! command -v rsync &>/dev/null; then
     echo "錯誤：找不到 rsync，請先安裝（apt install rsync）" >&2
     exit 1
