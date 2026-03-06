@@ -81,14 +81,14 @@ if [ ! -f "$APP_DIR/config/apps.yaml" ]; then
 fi
 
 echo "=== 3. 安裝依賴（uv sync）==="
-cd "$APP_DIR" && uv sync
+mkdir -p "$APP_DIR/.cache/uv"
+cd "$APP_DIR" && UV_CACHE_DIR="$APP_DIR/.cache/uv" uv sync
+chown -R "$APP_USER:$APP_USER" "$APP_DIR/.venv" "$APP_DIR/.cache"
 
 echo "=== 4. 產生 RSA 金鑰（如尚未存在）==="
 if [ ! -f "$APP_DIR/keys/private.pem" ]; then
     cd "$APP_DIR" && uv run python generate_keys.py
 fi
-
-mkdir -p "$APP_DIR/.cache/uv"
 
 echo "=== 5. 設定檔案權限 ==="
 if [ ! -f "$APP_DIR/.env" ]; then
