@@ -14,17 +14,15 @@ fi
 
 echo "=== 2. 部署程式碼 ==="
 mkdir -p "$APP_DIR"
-rsync -a --exclude='.git' --exclude='venv' --exclude='__pycache__' \
+rsync -a --exclude='.git' --exclude='.venv' --exclude='__pycache__' \
     "$(dirname "$0")/../" "$APP_DIR/"
 
-echo "=== 3. 建立 Python 虛擬環境 ==="
-python3 -m venv "$APP_DIR/venv"
-"$APP_DIR/venv/bin/pip" install --upgrade pip
-"$APP_DIR/venv/bin/pip" install -r "$APP_DIR/requirements.txt"
+echo "=== 3. 安裝依賴（uv sync）==="
+cd "$APP_DIR" && uv sync
 
 echo "=== 4. 產生 RSA 金鑰（如尚未存在）==="
 if [ ! -f "$APP_DIR/keys/private.pem" ]; then
-    cd "$APP_DIR" && "$APP_DIR/venv/bin/python" generate_keys.py
+    cd "$APP_DIR" && uv run python generate_keys.py
 fi
 
 echo "=== 5. 設定檔案權限 ==="
