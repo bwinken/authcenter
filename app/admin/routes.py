@@ -1221,5 +1221,7 @@ async def guide_page(
         return RedirectResponse("/admin/login", status_code=303)
 
     templates = _get_templates()
-    ctx = _base_ctx(request, admin, "guide")
+    settings = get_settings()
+    ctx = _base_ctx(request, admin, "guide",
+                    auth_center_base_url=settings.AUTH_CENTER_BASE_URL)
     return templates.TemplateResponse("admin_guide.html", ctx)

@@ -803,3 +803,15 @@ async def forgot_password_submit(
 
     ctx["success"] = True
     return templates.TemplateResponse("forgot_password.html", ctx)
+
+
+# ─── Public Key Endpoint ─────────────────────────────────────
+
+@router.get("/.well-known/public-key")
+async def get_public_key():
+    """公開 RS256 公鑰，供其他 App 驗證 JWT。"""
+    settings = get_settings()
+    return JSONResponse(
+        content={"public_key": settings.public_key},
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
