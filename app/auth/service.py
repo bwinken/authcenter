@@ -442,7 +442,7 @@ async def set_user_level(
             text(
                 "INSERT INTO app_admins (employee_name, app_id, assigned_by, auto_assigned) "
                 "VALUES (:ename, :aid, :by, 1) "
-                "ON CONFLICT(employee_name, app_id) DO NOTHING"
+                "ON CONFLICT(employee_name, app_id) DO UPDATE SET auto_assigned = 1, assigned_by = :by, assigned_at = datetime('now')"
             ),
             {"ename": employee_name, "aid": app_id, "by": granted_by},
         )

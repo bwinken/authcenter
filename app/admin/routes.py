@@ -379,7 +379,7 @@ async def generate_register_link(
     ctx = _base_ctx(request, admin, "dashboard",
                     apps=apps, perm_count=perm_count, admin_count=admin_count,
                     admin_apps=admin_apps, pending_registrations=pending)
-    ctx["success"] = f"註冊連結已產生（24 小時有效）：{link}"
+    ctx["register_link_info"] = {"employee_name": employee_name, "link": link}
     return templates.TemplateResponse("admin_dashboard.html", ctx)
 
 
