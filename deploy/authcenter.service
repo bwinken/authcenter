@@ -16,7 +16,7 @@ Environment="UV_CACHE_DIR=/opt/authcenter/.cache/uv"
 Environment="HOME=/opt/authcenter"
 ExecStart=/usr/local/bin/uv run fastapi run app/main.py \
     --host 127.0.0.1 \
-    --port ${APP_PORT:-8000} \
+    --port ${APP_PORT} \
     --workers 2
 Restart=on-failure
 RestartSec=5
