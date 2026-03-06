@@ -1,0 +1,52 @@
+#!/bin/bash
+# AuthCenter 部署腳本
+# 用法: sudo bash deploy/setup.sh
+set -e
+
+APP_DIR="/opt/authcenter"
+APP_USER="authcenter"
+
+echo "=== 1. 建立系統使用者 ==="
+if ! id "$APP_USER" &>/dev/null; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin "$APP_USER"
+    echo "使用者 $APP_USER 已建立"
+fi
+
+echo "=== 2. 部署程式碼 ==="
+mkdir -p "$APP_DIR"
+rsync -a --exclude='.git' --exclude='venv' --exclude='__pycache__' \
+    "$(dirname "$0")/../" "$APP_DIR/"
+
+echo "=== 3. 建立 Python 虛擬環境 ==="
+python3 -m venv "$APP_DIR/venv"
+"$APP_DIR/venv/bin/pip" install --upgrade pip
+"$APP_DIR/venv/bin/pip" install -r "$APP_DIR/requirements.txt"
+
+echo "=== 4. 產生 RSA 金鑰（如尚未存在）==="
+if [ ! -f "$APP_DIR/keys/private.pem" ]; then
+    cd "$APP_DIR" && "$APP_DIR/venv/bin/python" generate_keys.py
+fi
+
+echo "=== 5. 設定檔案權限 ==="
+chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+chmod 600 "$APP_DIR/.env"
+chmod 600 "$APP_DIR/keys/"*.pem
+
+echo "=== 6. 安裝 systemd service ==="
+cp "$APP_DIR/deploy/authcenter.service" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable authcenter
+systemctl restart authcenter
+
+echo "=== 7. 安裝 nginx 設定 ==="
+cp "$APP_DIR/deploy/authcenter.nginx.conf" /etc/nginx/sites-available/authcenter
+ln -sf /etc/nginx/sites-available/authcenter /etc/nginx/sites-enabled/authcenter
+nginx -t && systemctl reload nginx
+
+echo ""
+echo "=== 部署完成 ==="
+echo "請確認："
+echo "  1. 已建立 /opt/authcenter/.env（參考 .env.example）"
+echo "  2. 已設定 AUTH_CENTER_BASE_URL 為實際的 HTTPS 網址"
+echo "  3. 已放置 SSL 憑證到 /etc/nginx/ssl/"
+echo "  4. systemctl status authcenter 檢查服務狀態"

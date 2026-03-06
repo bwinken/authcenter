@@ -1,0 +1,27 @@
+[Unit]
+Description=AuthCenter FastAPI Application
+After=network.target
+
+[Service]
+Type=exec
+User=authcenter
+Group=authcenter
+WorkingDirectory=/opt/authcenter
+EnvironmentFile=/opt/authcenter/.env
+ExecStart=/opt/authcenter/venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 2 \
+    --log-level info
+Restart=on-failure
+RestartSec=5
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/authcenter/auth_local.db /opt/authcenter/auth_local.db-wal /opt/authcenter/auth_local.db-shm
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
