@@ -19,12 +19,14 @@ ExecStart=/usr/local/bin/uv run fastapi run app/main.py \
 Restart=on-failure
 RestartSec=5
 
-# 安全加固
+# 安全加固（相容 Linux 4.4+ 核心）
 NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/opt/authcenter/auth_local.db /opt/authcenter/auth_local.db-wal /opt/authcenter/auth_local.db-shm
-PrivateTmp=true
+# 注意：ProtectSystem=strict、ProtectHome、PrivateTmp 需要較新核心的 mount namespace 支援
+# 如果核心 >= 4.15 可取消下方註解啟用更強的沙箱
+# ProtectSystem=strict
+# ProtectHome=true
+# ReadWritePaths=/opt/authcenter/auth_local.db /opt/authcenter/auth_local.db-wal /opt/authcenter/auth_local.db-shm
+# PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
