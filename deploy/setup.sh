@@ -34,12 +34,15 @@ if [ -d "$APP_DIR" ] && [ ! -f "$APP_DIR/.env" ]; then
     exit 1
 fi
 
-# Proxy 設定（依環境修改，不需要則留空）
-PROXY_URL="${HTTP_PROXY:-}"
+# Proxy 設定（只需設定 http_proxy 即可，不需要則留空）
+PROXY_URL="${http_proxy:-}"
 if [ -n "$PROXY_URL" ]; then
+    export http_proxy="$PROXY_URL"
     export HTTP_PROXY="$PROXY_URL"
+    export https_proxy="$PROXY_URL"
     export HTTPS_PROXY="$PROXY_URL"
-    export NO_PROXY="localhost,127.0.0.1"
+    export no_proxy="localhost,127.0.0.1,*.company.local"
+    export NO_PROXY="$no_proxy"
     echo "使用 Proxy: $PROXY_URL"
 fi
 
