@@ -215,18 +215,60 @@ python scripts/preflight_check.py --test-user kane.beh
 
 ### Step 6：啟動服務
 
+**方式 A：直接執行（開發 / 測試）**
+
 ```bash
-# 開發模式（auto-reload，修改程式碼自動重啟）
+# 開發模式（auto-reload）
 fastapi dev app/main.py
 
-# 正式部署
+# 正式模式
 fastapi run app/main.py
+```
 
-# 一鍵部署（建立使用者、安裝依賴、設定 systemd + nginx）
-sudo bash deploy/setup.sh
+**方式 B：Docker 部署**
 
-# 內網需透過 Proxy 時，帶入 http_proxy 執行
-http_proxy="http://proxy.company.local:8080" sudo -E bash deploy/setup.sh
+```bash
+# 1. 準備設定檔
+cp .env.example .env        # 編輯填入實際設定
+cp config/apps.yaml.example config/apps.yaml
+
+# 2. 準備 ODBC Driver（離線安裝）
+#    將預先下載的 .deb 檔案放到 odbc-offline/ 目錄
+mkdir -p odbc-offline
+cp /path/to/your/odbc-debs/*.deb odbc-offline/
+
+# 3. Build image（內網需透過 Proxy 安裝 Python 套件）
+docker compose build \
+  --build-arg http_proxy=http://proxy.company.local:8080 \
+  --build-arg https_proxy=http://proxy.company.local:8080
+
+# 4. 啟動（首次會自動產生 RSA 金鑰）
+docker compose up -d
+
+# 5. 查看日誌
+docker compose logs -f
+
+# 常用指令
+docker compose restart        # 重啟
+docker compose down           # 停止
+docker compose up -d --build  # 重新 build 後啟動
+```
+
+Docker 部署會自動：
+- 從 `odbc-offline/` 離線安裝 ODBC Driver 17（不需連外網）
+- 首次啟動產生 RSA 金鑰對
+- 持久化 SQLite DB（`data/`）、RSA 金鑰（`keys/`）、App 註冊表（`config/apps.yaml`）
+
+> 不需 Proxy 的環境可省略 `--build-arg` 參數。
+
+**方式 C：systemd 一鍵部署（Linux）**
+
+```bash
+# 一鍵部署（安裝依賴、設定 systemd + nginx）
+bash deploy/setup.sh
+
+# 內網需透過 Proxy 時
+http_proxy="http://proxy.company.local:8080" bash deploy/setup.sh
 ```
 
 啟動後：
@@ -1316,7 +1358,11 @@ auth-center/
 │       ├── admin_audit_log.html   # 操作紀錄
 │       └── admin_guide.html       # 使用指南
 ├── config/
-│   └── apps.yaml            # 已註冊 App 清單
+│   └── apps.yaml.example   # App 註冊表範本（cp 為 apps.yaml 使用）
+├── deploy/
+│   ├── setup.sh             # systemd 一鍵部署腳本
+│   ├── authcenter.service   # systemd unit file
+│   └── authcenter.nginx.conf # nginx 反向代理設定
 ├── keys/                    # RSA 金鑰對（gitignore）
 ├── scripts/
 │   ├── init_db.sql                # SQLite 表結構
@@ -1325,6 +1371,9 @@ auth-center/
 │   └── manage_permissions.py      # CLI：管理使用者 App 權限
 ├── example_app/
 │   └── main.py              # AI App 整合範例（完整可運行）
+├── Dockerfile               # Docker 映像建構檔
+├── docker-compose.yml       # Docker Compose 部署設定
+├── .dockerignore            # Docker build 排除清單
 ├── generate_keys.py         # 金鑰產生腳本
 ├── pyproject.toml          # 專案設定與依賴管理（uv）
 ├── requirements.txt        # 依賴清單（向下相容）

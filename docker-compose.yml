@@ -1,0 +1,40 @@
+# AuthCenter Docker Compose
+#
+# 使用方式：
+#   1. cp .env.example .env && 編輯 .env
+#   2. cp config/apps.yaml.example config/apps.yaml
+#   3. docker compose up -d
+#
+# 首次啟動會自動產生 RSA 金鑰對（如 keys/ 目錄為空）
+
+services:
+  authcenter:
+    build: .
+    container_name: authcenter
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      # Container 內部路徑（覆蓋 .env 中的路徑設定）
+      - SQLITE_PATH=/app/data/auth_local.db
+      - PRIVATE_KEY_PATH=/app/keys/private.pem
+      - PUBLIC_KEY_PATH=/app/keys/public.pem
+    volumes:
+      # 持久化資料
+      - ./data:/app/data                  # SQLite DB
+      - ./keys:/app/keys                  # RSA 金鑰對
+      - ./config/apps.yaml:/app/config/apps.yaml  # App 註冊表
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        # 首次啟動自動產生 RSA 金鑰
+        if [ ! -f /app/keys/private.pem ]; then
+          echo "首次啟動，產生 RSA 金鑰對..."
+          python generate_keys.py
+        fi
+        # 確保 data 目錄存在
+        mkdir -p /app/data
+        # 啟動服務
+        exec fastapi run app/main.py --host 0.0.0.0 --port 8000 --workers 2

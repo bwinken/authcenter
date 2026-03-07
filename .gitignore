@@ -15,6 +15,10 @@ config/apps.yaml
 
 # Database
 *.db
+data/
+
+# ODBC offline install packages
+odbc-offline/
 
 # Python
 __pycache__/
