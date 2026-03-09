@@ -5,7 +5,6 @@
     <p class="subtitle">AuthCenter 管理後台</p>
     {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
     <form method="POST" action="/admin/login">
-        {{ csrf_input(request) }}
         <div class="form-group">
             <label for="username">帳號</label>
             <input type="text"

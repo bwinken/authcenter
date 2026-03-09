@@ -11,7 +11,6 @@
         <div class="alert alert-success">帳號建立成功！請返回登入頁面。</div>
     {% elif token %}
         <form method="POST" action="/auth/register">
-            {{ csrf_input(request) }}
             <input type="hidden" name="employee_name" value="{{ employee_name }}">
             <input type="hidden" name="token" value="{{ token }}">
             <div class="form-group">

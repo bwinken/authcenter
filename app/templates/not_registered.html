@@ -23,7 +23,6 @@
     {% endif %}
     {% if not success %}
         <form method="POST" action="/auth/request-register">
-            {{ csrf_input(request) }}
             <input type="hidden" name="token" value="{{ token }}">
             <button type="submit" class="btn btn-primary">申請註冊</button>
         </form>

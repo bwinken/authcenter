@@ -380,14 +380,7 @@ async def login_for_swagger(
     """
     client: httpx.AsyncClient = request.app.state.http_client
 
-    # Step 1: 先 GET 登入頁面取得 CSRF token（Double Submit Cookie）
-    login_page = await client.get(
-        f"{AUTH_CENTER_BASE_URL}/auth/login",
-        params={"app_id": APP_ID, "redirect_uri": REDIRECT_URI},
-    )
-    csrf_token = login_page.cookies.get("csrf_token", "")
-
-    # Step 2: 向 Auth Center 提交登入（模擬表單 POST，帶 CSRF token）
+    # 向 Auth Center 提交登入（/auth/login 已豁免 CSRF，不需帶 token）
     login_resp = await client.post(
         f"{AUTH_CENTER_BASE_URL}/auth/login",
         data={
@@ -395,7 +388,6 @@ async def login_for_swagger(
             "password": form_data.password,
             "app_id": APP_ID,
             "redirect_uri": REDIRECT_URI,
-            "_csrf_token": csrf_token,
         },
         follow_redirects=False,  # 不自動跟隨 redirect，我們要取 code
     )

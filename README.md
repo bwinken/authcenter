@@ -1302,7 +1302,7 @@ Level 說明：`1` = Read、`2` = Read + Write、`3` = Full Admin
 |------|------|
 | **RS256 非對稱簽名** | 私鑰僅 Auth Center 持有，App 端只需公鑰驗證 |
 | **JWT `iss` 驗證** | 簽發時寫入 `iss: "auth-center"`，驗證時檢查 issuer 是否匹配 |
-| **CSRF 保護** | Double Submit Cookie 模式，所有 POST 表單均需 CSRF token（`/auth/token` API 豁免） |
+| **CSRF 保護** | Double Submit Cookie 模式，保護敏感操作路由（改密碼、Admin 管理操作）；登入、註冊等表單已豁免（本身需帳密或一次性 token 保護） |
 | **CORS 限制** | `allow_origins` 自動從 `apps.yaml` 的 `redirect_uri` 提取，不再全開 `*` |
 | **密碼強度政策** | 至少 8 字元、含大小寫英文字母及數字、不可與使用者名稱相同 |
 | **bcrypt 密碼雜湊** | 密碼使用 bcrypt 單向雜湊儲存 |
