@@ -56,7 +56,6 @@ REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8001/auth/callback")
 PUBLIC_KEY_PATH = os.getenv("PUBLIC_KEY_PATH", "./keys/public.pem")
 
 ALGORITHM = "RS256"
-TOKEN_MAX_AGE = 12 * 60 * 60  # 12 小時（與 Auth Center JWT 過期時間一致）
 
 LOGIN_URL = f"{AUTH_CENTER_BASE_URL}/auth/login?app_id={APP_ID}&redirect_uri={REDIRECT_URI}"
 
@@ -429,7 +428,7 @@ async def login_for_swagger(
     return TokenResponse(
         access_token=data["access_token"],
         token_type="bearer",
-        expires_in=data.get("expires_in", TOKEN_MAX_AGE),
+        expires_in=data["expires_in"],
     )
 
 
@@ -452,14 +451,15 @@ async def auth_callback(request: Request, code: str = Query(...)):
             return RedirectResponse(LOGIN_URL)
         raise HTTPException(500, f"Token 交換失敗：{error}")
 
+    data = resp.json()
     response = RedirectResponse("/", status_code=303)
     response.set_cookie(
         key="access_token",
-        value=resp.json()["access_token"],
+        value=data["access_token"],
         httponly=True,
         secure=False,      # 本地開發用 HTTP，正式環境改 True
         samesite="lax",
-        max_age=TOKEN_MAX_AGE,
+        max_age=data["expires_in"],
     )
     return response
 
