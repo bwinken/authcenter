@@ -189,7 +189,7 @@ async def admin_login_submit(
     """
     templates = _get_templates()
     settings = get_settings()
-    username = username.strip()
+    username = username.strip().lower()
 
     # Rate limit check
     client_ip = _get_client_ip(request)

@@ -360,8 +360,6 @@ async def register_submit(
     4. 建立帳號（用 try/except 處理並行 race condition）
     5. 導回登入頁繼續 OAuth 流程
     """
-    employee_name = service.normalize_employee_name(employee_name)
-
     # Validate registration token
     data = await service.consume_registration_token(sqlite_session, token)
     if data is None:
@@ -373,6 +371,8 @@ async def register_submit(
             "success": False,
         })
 
+    # 以 token 綁定的 employee_name 為準，防止竄改表單註冊他人帳號
+    employee_name = service.normalize_employee_name(data["employee_name"])
     app_id = data["app_id"]
     redirect_uri = data["redirect_uri"]
 
