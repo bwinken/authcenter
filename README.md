@@ -24,7 +24,8 @@
 12. [資料庫架構](#12-資料庫架構)
 13. [CLI 管理工具](#13-cli-管理工具)
 14. [安全機制](#14-安全機制)
-15. [專案結構](#15-專案結構)
+15. [安全測試](#15-安全測試)
+16. [專案結構](#16-專案結構)
 
 ---
 
@@ -1329,7 +1330,47 @@ Level 說明：`1` = Read、`2` = Read + Write、`3` = Full Admin
 
 ---
 
-## 15. 專案結構
+## 15. 安全測試
+
+`example_app/security_tests.py` 是一套整合安全測試腳本，針對已啟動的 Auth Center 執行自動化安全性驗證。涵蓋 9 大類、31 項測試：
+
+| 類別 | 測試項目 | 數量 |
+|------|----------|:----:|
+| **A. 基本權限阻擋** | 無權限被拒、level=0 拒絕、組織不符、個人覆蓋組織 | 4 |
+| **B. 權限撤銷時序** | 登入後撤銷 → token 失敗、降級 → scopes 更新 | 2 |
+| **C. Auth Code 攻擊** | 重複使用、跨 App 使用、過期、偽造 | 4 |
+| **D. 組織邊界隔離** | 跨組織存取、預設 level、個人覆蓋、default_level 上限 | 4 |
+| **E. 權限提升攻擊** | 篡改 app_id/redirect_uri、App Admin 越權操作 | 6 |
+| **F. 註冊流程安全** | 偽造 token 存取/提交、新帳號無權限 | 3 |
+| **G. Admin 認證安全** | 偽造 JWT、access_token 冒充 admin、非 admin 登入 | 3 |
+| **H. Rate Limiting** | 暴力破解密碼、Token endpoint 暴力測試 | 2 |
+| **I. CSRF 防護** | 缺少 token、token 不匹配、API 豁免 | 3 |
+
+### 執行方式
+
+```bash
+# 前置條件：Auth Center 已啟動、apps.yaml 已設定測試 App、測試帳號已註冊
+# 設定 example_app/.env（參考 .env.example）
+
+# 全部測試
+python example_app/security_tests.py
+
+# 只跑特定類別
+python example_app/security_tests.py A          # A 類全部
+python example_app/security_tests.py A1 C2 H1   # 指定測試
+
+# 跳過特定測試
+python example_app/security_tests.py --skip C3 H  # 跳過 C3 和 H 類
+
+# 列出所有測試
+python example_app/security_tests.py --list
+```
+
+> 部分測試（B 類、D 類）需要管理員手動操作（如撤銷權限、調整設定），腳本會暫停並顯示操作指示。
+
+---
+
+## 16. 專案結構
 
 ```
 auth-center/
@@ -1373,7 +1414,8 @@ auth-center/
 │   ├── generate_register_link.py  # CLI：產生註冊連結
 │   └── manage_permissions.py      # CLI：管理使用者 App 權限
 ├── example_app/
-│   └── main.py              # AI App 整合範例（完整可運行）
+│   ├── main.py              # AI App 整合範例（完整可運行）
+│   └── security_tests.py    # 安全測試腳本（31 項自動化驗證）
 ├── Dockerfile               # Docker 映像建構檔
 ├── docker-compose.yml       # Docker Compose 部署設定
 ├── .dockerignore            # Docker build 排除清單
