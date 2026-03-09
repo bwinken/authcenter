@@ -17,8 +17,22 @@ CSRF_COOKIE = "csrf_token"
 CSRF_FIELD = "_csrf_token"
 CSRF_TOKEN_LENGTH = 32
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-# API endpoints that use client_secret auth instead of cookies (no browser forms)
-EXEMPT_PATHS = {"/auth/token"}
+# 不需要 CSRF 保護的路由：
+# - 登入表單（本身就需要輸入帳密，攻擊者無法利用）
+# - 註冊流程（使用一次性 token 保護）
+# - /auth/token（API 端點，用 client_secret 認證）
+# 保留 CSRF 的路由：/auth/change-password、/admin/*（除了 /admin/login）
+EXEMPT_PATHS = {
+    "/auth/token",
+    "/auth/login",
+    "/auth/dashboard",
+    "/auth/pre-register",
+    "/auth/request-register",
+    "/auth/register-request",
+    "/auth/register",
+    "/auth/forgot-password",
+    "/admin/login",
+}
 
 
 def _generate_token() -> str:

@@ -4,7 +4,7 @@ Auth Center 安全性手動測試腳本
 
 此腳本自動化使用者端操作，管理員操作由人手動完成。
 測試項目涵蓋：權限阻擋、Auth Code 攻擊、權限提升、註冊安全、
-Rate Limiting、CSRF 防護、時序攻擊等。
+Rate Limiting、CSRF 防護（針對敏感操作路由）、時序攻擊等。
 
 使用方式：
     1. 確保 Auth Center 已啟動 (預設 http://localhost:8000)
@@ -132,13 +132,10 @@ def _admin_action(instruction: str):
     input(f"    {DIM}完成後按 Enter 繼續...{RESET}")
 
 
-async def _get_csrf(client: httpx.AsyncClient, path: str = "/auth/login") -> str:
-    """取得 CSRF token（從 cookie）。"""
+async def _get_csrf(client: httpx.AsyncClient, path: str = "/admin/dashboard") -> str:
+    """取得 CSRF token（從 cookie）。僅用於需要 CSRF 保護的路由（如 admin 操作）。"""
     url = f"{CONFIG['base_url']}{path}"
-    params = {}
-    if path == "/auth/login":
-        params = {"app_id": CONFIG["app_id"], "redirect_uri": CONFIG["redirect_uri"]}
-    resp = await client.get(url, params=params)
+    await client.get(url)
     return client.cookies.get("csrf_token", "")
 
 
@@ -148,18 +145,16 @@ async def _login(
     password: str | None = None,
     app_id: str | None = None,
     redirect_uri: str | None = None,
-    csrf: str | None = None,
 ) -> httpx.Response:
-    """模擬使用者登入（POST /auth/login），不自動跟隨 redirect。"""
-    if csrf is None:
-        csrf = await _get_csrf(client)
+    """模擬使用者登入（POST /auth/login），不自動跟隨 redirect。
 
+    /auth/login 已豁免 CSRF 保護，不需帶 CSRF token。
+    """
     data = {
         "employee_name": user or CONFIG["test_user"],
         "password": password or CONFIG["test_password"],
         "app_id": app_id or CONFIG["app_id"],
         "redirect_uri": redirect_uri or CONFIG["redirect_uri"],
-        "_csrf_token": csrf,
     }
     return await client.post(
         f"{CONFIG['base_url']}/auth/login",
@@ -193,15 +188,15 @@ async def _exchange_token(
 
 
 async def _admin_login(client: httpx.AsyncClient) -> bool:
-    """用測試帳號登入 Admin Panel，回傳是否成功。"""
-    await client.get(f"{CONFIG['base_url']}/admin/login")
-    csrf = client.cookies.get("csrf_token", "")
+    """用測試帳號登入 Admin Panel，回傳是否成功。
+
+    /admin/login 已豁免 CSRF 保護，不需帶 CSRF token。
+    """
     resp = await client.post(
         f"{CONFIG['base_url']}/admin/login",
         data={
             "username": CONFIG["test_user"],
             "password": CONFIG["test_password"],
-            "_csrf_token": csrf,
         },
         follow_redirects=False,
     )
@@ -261,19 +256,10 @@ async def test_A3(client: httpx.AsyncClient):
         "確認 ai_report_app 的 allowed_orgs 已設定且不包含測試帳號的 org_id\n"
         "並確認測試帳號對 ai_report_app 沒有個人權限"
     )
-    await client.get(
-        f"{CONFIG['base_url']}/auth/login",
-        params={
-            "app_id": CONFIG["org_restricted_app_id"],
-            "redirect_uri": CONFIG["org_restricted_redirect"],
-        },
-    )
-    csrf = client.cookies.get("csrf_token", "")
     resp = await _login(
         client,
         app_id=CONFIG["org_restricted_app_id"],
         redirect_uri=CONFIG["org_restricted_redirect"],
-        csrf=csrf,
     )
     no_redirect = resp.status_code != 303
     _print_result("A3", "組織不符 → 被拒絕", no_redirect,
@@ -288,19 +274,10 @@ async def test_A4(client: httpx.AsyncClient):
         "2. 在權限管理中，將測試帳號對 ai_report_app 設為 Level 0 (Denied)\n"
         "（測試個人設定 level=0 是否覆蓋組織預設權限）"
     )
-    await client.get(
-        f"{CONFIG['base_url']}/auth/login",
-        params={
-            "app_id": CONFIG["org_restricted_app_id"],
-            "redirect_uri": CONFIG["org_restricted_redirect"],
-        },
-    )
-    csrf = client.cookies.get("csrf_token", "")
     resp = await _login(
         client,
         app_id=CONFIG["org_restricted_app_id"],
         redirect_uri=CONFIG["org_restricted_redirect"],
-        csrf=csrf,
     )
     no_redirect = resp.status_code != 303
     _print_result("A4", "組織符合但個人 level=0 → 個人優先，被拒絕", no_redirect,
@@ -438,19 +415,10 @@ async def test_D1(client: httpx.AsyncClient):
         "且測試帳號的 org_id 不在其中\n"
         "並確認測試帳號對此 App 沒有個人權限"
     )
-    await client.get(
-        f"{CONFIG['base_url']}/auth/login",
-        params={
-            "app_id": CONFIG["org_restricted_app_id"],
-            "redirect_uri": CONFIG["org_restricted_redirect"],
-        },
-    )
-    csrf = client.cookies.get("csrf_token", "")
     resp = await _login(
         client,
         app_id=CONFIG["org_restricted_app_id"],
         redirect_uri=CONFIG["org_restricted_redirect"],
-        csrf=csrf,
     )
     _print_result("D1", "跨組織存取 → 被拒絕",
                   resp.status_code != 303,
@@ -469,19 +437,10 @@ async def test_D2(client: httpx.AsyncClient):
         "2. 設定 default_level = 1\n"
         "3. 確認測試帳號沒有個人權限記錄"
     )
-    await client.get(
-        f"{CONFIG['base_url']}/auth/login",
-        params={
-            "app_id": CONFIG["org_restricted_app_id"],
-            "redirect_uri": CONFIG["org_restricted_redirect"],
-        },
-    )
-    csrf = client.cookies.get("csrf_token", "")
     resp = await _login(
         client,
         app_id=CONFIG["org_restricted_app_id"],
         redirect_uri=CONFIG["org_restricted_redirect"],
-        csrf=csrf,
     )
     code = _extract_code(resp)
     if code:
@@ -514,19 +473,10 @@ async def test_D3(client: httpx.AsyncClient):
         "在 Admin 中將測試帳號對 ai_report_app 的個人權限設為 level 2\n"
         "（app 的 default_level 仍是 1）"
     )
-    await client.get(
-        f"{CONFIG['base_url']}/auth/login",
-        params={
-            "app_id": CONFIG["org_restricted_app_id"],
-            "redirect_uri": CONFIG["org_restricted_redirect"],
-        },
-    )
-    csrf = client.cookies.get("csrf_token", "")
     resp = await _login(
         client,
         app_id=CONFIG["org_restricted_app_id"],
         redirect_uri=CONFIG["org_restricted_redirect"],
-        csrf=csrf,
     )
     code = _extract_code(resp)
     if code:
@@ -595,12 +545,10 @@ async def test_E1(client: httpx.AsyncClient):
         "確認測試帳號對 ai_chat_app 有權限（level 1 以上），\n"
         "但對 test_app 沒有權限"
     )
-    csrf = await _get_csrf(client)
     resp = await _login(
         client,
         app_id=CONFIG["app2_id"],       # 篡改為 test_app
         redirect_uri=CONFIG["redirect_uri"],  # 但 redirect_uri 是 ai_chat_app 的
-        csrf=csrf,
     )
     _print_result("E1", "篡改表單 app_id → 被 redirect_uri 驗證擋下",
                   resp.status_code != 303,
@@ -612,12 +560,10 @@ async def test_E2(client: httpx.AsyncClient):
     _admin_action(
         "確認測試帳號對 ai_chat_app 有權限（level 1 以上）"
     )
-    csrf = await _get_csrf(client)
     resp = await _login(
         client,
         app_id=CONFIG["app_id"],
         redirect_uri="http://evil.example.com/steal",
-        csrf=csrf,
     )
     _print_result("E2", "篡改 redirect_uri → 被擋下",
                   resp.status_code != 303,
@@ -739,7 +685,6 @@ async def test_F1(client: httpx.AsyncClient):
 
 @_register("F2", "F. 註冊流程安全", "偽造 token 提交註冊 → 失敗")
 async def test_F2(client: httpx.AsyncClient):
-    csrf = client.cookies.get("csrf_token", "")
     resp = await client.post(
         f"{CONFIG['base_url']}/auth/register",
         data={
@@ -747,7 +692,6 @@ async def test_F2(client: httpx.AsyncClient):
             "password": "NewPass123",
             "confirm_password": "NewPass123",
             "token": "totally_fake_token",
-            "_csrf_token": csrf,
         },
         follow_redirects=False,
     )
@@ -821,14 +765,11 @@ async def test_G3(client: httpx.AsyncClient):
         "確認測試帳號不是 Super Admin 也不是任何 App 的 App Admin\n"
         "（從 Admin Panel 移除測試帳號的所有 App Admin 身份）"
     )
-    await client.get(f"{CONFIG['base_url']}/admin/login")
-    csrf = client.cookies.get("csrf_token", "")
     resp = await client.post(
         f"{CONFIG['base_url']}/admin/login",
         data={
             "username": CONFIG["test_user"],
             "password": CONFIG["test_password"],
-            "_csrf_token": csrf,
         },
         follow_redirects=False,
     )
@@ -850,11 +791,6 @@ async def test_H1(client: httpx.AsyncClient):
     rate_limited = False
     attempts = 0
     for i in range(12):
-        await rl_client.get(
-            f"{CONFIG['base_url']}/auth/login",
-            params={"app_id": CONFIG["app_id"], "redirect_uri": CONFIG["redirect_uri"]},
-        )
-        csrf = rl_client.cookies.get("csrf_token", "")
         resp = await rl_client.post(
             f"{CONFIG['base_url']}/auth/login",
             data={
@@ -862,7 +798,6 @@ async def test_H1(client: httpx.AsyncClient):
                 "password": f"wrong_password_{i}",
                 "app_id": CONFIG["app_id"],
                 "redirect_uri": CONFIG["redirect_uri"],
-                "_csrf_token": csrf,
             },
             follow_redirects=False,
         )
@@ -906,20 +841,19 @@ async def test_H2(client: httpx.AsyncClient):
 
 # ── I. CSRF 防護 ──
 
-@_register("I1", "I. CSRF 防護", "無 CSRF token 提交登入 → 403")
+@_register("I1", "I. CSRF 防護", "無 CSRF token 提交改密碼 → 403")
 async def test_I1(client: httpx.AsyncClient):
     bare_client = httpx.AsyncClient()
     resp = await bare_client.post(
-        f"{CONFIG['base_url']}/auth/login",
+        f"{CONFIG['base_url']}/auth/change-password",
         data={
-            "employee_name": CONFIG["test_user"],
-            "password": CONFIG["test_password"],
-            "app_id": CONFIG["app_id"],
-            "redirect_uri": CONFIG["redirect_uri"],
+            "old_password": "any",
+            "new_password": "NewPass123",
+            "confirm_password": "NewPass123",
         },
         follow_redirects=False,
     )
-    _print_result("I1", "無 CSRF token 提交登入 → 403",
+    _print_result("I1", "無 CSRF token 提交改密碼 → 403",
                   resp.status_code == 403,
                   f"status={resp.status_code}")
     await bare_client.aclose()
@@ -929,12 +863,11 @@ async def test_I1(client: httpx.AsyncClient):
 async def test_I2(client: httpx.AsyncClient):
     mismatch_client = httpx.AsyncClient(cookies={"csrf_token": "valid_cookie_token"})
     resp = await mismatch_client.post(
-        f"{CONFIG['base_url']}/auth/login",
+        f"{CONFIG['base_url']}/auth/change-password",
         data={
-            "employee_name": CONFIG["test_user"],
-            "password": CONFIG["test_password"],
-            "app_id": CONFIG["app_id"],
-            "redirect_uri": CONFIG["redirect_uri"],
+            "old_password": "any",
+            "new_password": "NewPass123",
+            "confirm_password": "NewPass123",
             "_csrf_token": "different_form_token",
         },
         follow_redirects=False,
