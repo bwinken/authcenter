@@ -110,22 +110,22 @@ async def _list_app_admins(
     """List app admin assignments, optionally filtered by app_id or app_ids list."""
     if app_id:
         result = await sqlite_session.execute(
-            text("SELECT employee_name, app_id, assigned_by, assigned_at FROM app_admins WHERE app_id = :aid ORDER BY employee_name"),
+            text("SELECT employee_name, app_id, assigned_by, assigned_at, auto_assigned FROM app_admins WHERE app_id = :aid ORDER BY employee_name"),
             {"aid": app_id},
         )
     elif app_ids is not None:
         placeholders = ", ".join(f":a{i}" for i in range(len(app_ids)))
         params = {f"a{i}": aid for i, aid in enumerate(app_ids)}
         result = await sqlite_session.execute(
-            text(f"SELECT employee_name, app_id, assigned_by, assigned_at FROM app_admins WHERE app_id IN ({placeholders}) ORDER BY employee_name, app_id"),
+            text(f"SELECT employee_name, app_id, assigned_by, assigned_at, auto_assigned FROM app_admins WHERE app_id IN ({placeholders}) ORDER BY employee_name, app_id"),
             params,
         )
     else:
         result = await sqlite_session.execute(
-            text("SELECT employee_name, app_id, assigned_by, assigned_at FROM app_admins ORDER BY employee_name, app_id"),
+            text("SELECT employee_name, app_id, assigned_by, assigned_at, auto_assigned FROM app_admins ORDER BY employee_name, app_id"),
         )
     return [
-        {"employee_name": r[0], "app_id": r[1], "assigned_by": r[2], "assigned_at": r[3]}
+        {"employee_name": r[0], "app_id": r[1], "assigned_by": r[2], "assigned_at": r[3], "auto_assigned": r[4]}
         for r in result.fetchall()
     ]
 
@@ -763,10 +763,10 @@ async def admins_page(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """App Admin 管理頁面（Super Admin 或 App Admin）。
+    """App Admin 唯讀列表頁面（Super Admin 或 App Admin）。
 
-    Super Admin：列出所有已指定的 App Admin。
-    App Admin：僅列出自己管理的 App 的 Admin，且只能指派/移除自己管理的 App。
+    App Admin 現已統一由權限管理頁面的 Level 3 授權自動同步產生，
+    此頁面僅供查閱，不再提供手動指派/移除功能。
     """
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
@@ -784,100 +784,6 @@ async def admins_page(
 
     ctx = _base_ctx(request, admin, "admins", app_admins=app_admins, apps=apps)
     return templates.TemplateResponse("admin_admins.html", ctx)
-
-
-@router.post("/admins/assign", response_class=HTMLResponse)
-async def assign_app_admin(
-    request: Request,
-    employee_name: str = Form(...),
-    app_id: str = Form(...),
-    admin_token: str | None = Cookie(default=None),
-    sqlite_session: AsyncSession = Depends(get_sqlite_session),
-):
-    """指定員工為某 App 的 App Admin（Super Admin 或該 App 的 App Admin）。
-
-    將 employee_name + app_id 寫入 app_admins 表。若已存在則更新 assigned_by 與時間。
-    App Admin 僅能指派自己管理的 App，嘗試指派其他 App 會回傳 403。
-    操作完成後記錄 audit log。
-    """
-    admin = _verify_admin_cookie(admin_token)
-    if admin is None:
-        return RedirectResponse("/admin/login", status_code=303)
-
-    # App Admin 僅能指派自己管理的 App
-    if not admin.get("is_super"):
-        admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
-        if app_id not in admin_apps:
-            return _forbidden("您沒有權限管理此 App 的 Admin。")
-
-    employee_name = service.normalize_employee_name(employee_name)
-    admin_name = admin.get("sub", "")
-
-    apps = load_registered_apps()
-    if app_id not in apps:
-        templates = _get_templates()
-        app_admins = await _list_app_admins(sqlite_session)
-        ctx = _base_ctx(request, admin, "admins", app_admins=app_admins, apps=apps,
-                        error=f"App ID '{app_id}' 不存在。")
-        return templates.TemplateResponse("admin_admins.html", ctx)
-
-    await sqlite_session.execute(
-        text(
-            "INSERT INTO app_admins (employee_name, app_id, assigned_by) "
-            "VALUES (:ename, :aid, :by) "
-            "ON CONFLICT(employee_name, app_id) DO UPDATE SET assigned_by = :by, assigned_at = datetime('now')"
-        ),
-        {"ename": employee_name, "aid": app_id, "by": admin_name},
-    )
-    await sqlite_session.commit()
-
-    await _log_action(
-        sqlite_session, admin_name, "assign_app_admin", target=f"{employee_name}→{app_id}",
-
-    )
-
-    return RedirectResponse("/admin/admins", status_code=303)
-
-
-@router.post("/admins/remove", response_class=HTMLResponse)
-async def remove_app_admin(
-    request: Request,
-    employee_name: str = Form(...),
-    app_id: str = Form(...),
-    admin_token: str | None = Cookie(default=None),
-    sqlite_session: AsyncSession = Depends(get_sqlite_session),
-):
-    """移除某員工的 App Admin 身份（Super Admin 或該 App 的 App Admin）。
-
-    從 app_admins 表刪除對應記錄，該員工將無法再以 App Admin 身份登入管理該 app。
-    App Admin 僅能移除自己管理的 App 的 Admin，嘗試操作其他 App 會回傳 403。
-    操作完成後記錄 audit log。
-    """
-    admin = _verify_admin_cookie(admin_token)
-    if admin is None:
-        return RedirectResponse("/admin/login", status_code=303)
-
-    # App Admin 僅能移除自己管理的 App 的 Admin
-    if not admin.get("is_super"):
-        admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
-        if app_id not in admin_apps:
-            return _forbidden("您沒有權限管理此 App 的 Admin。")
-
-    employee_name = service.normalize_employee_name(employee_name)
-    admin_name = admin.get("sub", "")
-
-    await sqlite_session.execute(
-        text("DELETE FROM app_admins WHERE employee_name = :ename AND app_id = :aid"),
-        {"ename": employee_name, "aid": app_id},
-    )
-    await sqlite_session.commit()
-
-    await _log_action(
-        sqlite_session, admin_name, "remove_app_admin", target=f"{employee_name}→{app_id}",
-
-    )
-
-    return RedirectResponse("/admin/admins", status_code=303)
 
 
 # ═══════════════════════════════════════════════════════════════
