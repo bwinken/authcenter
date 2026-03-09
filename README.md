@@ -188,7 +188,8 @@ TEAMS_WEBHOOK_URL=https://your-org.webhook.office.com/webhookb2/xxx
 # HTTP Proxy（內網環境需透過 Proxy 連外網時設定）
 # HTTP_PROXY=http://proxy.company.com:8080
 
-# Auth Center 對外 URL
+# Server
+APP_PORT=8000
 AUTH_CENTER_BASE_URL=http://localhost:8000
 
 # Super Admin 帳密
@@ -299,6 +300,7 @@ http_proxy="http://proxy.company.local:8080" bash deploy/setup.sh
 | `PUBLIC_KEY_PATH` | RS256 公鑰路徑 | `./keys/public.pem` | * |
 | `TEAMS_WEBHOOK_URL` | Microsoft Teams Webhook URL | — | |
 | `HTTP_PROXY` | HTTP Proxy（內網環境透過 Proxy 發送 Webhook） | — | |
+| `APP_PORT` | 服務監聽埠 | `8000` | |
 | `AUTH_CENTER_BASE_URL` | Auth Center 對外 URL | `http://localhost:8000` | |
 | `ADMIN_USERNAME` | Super Admin 帳號 | `admin` | * |
 | `ADMIN_PASSWORD` | Super Admin 密碼 | — | * |
@@ -929,9 +931,8 @@ async def auth_callback(code: str = Query(...)):
         key="access_token",
         value=data["access_token"],
         httponly=True,     # JS 無法存取，防止 XSS 竊取
-        secure=True,       # 僅透過 HTTPS 傳輸（本地開發設 False）
         samesite="lax",    # 防止 CSRF 跨站請求
-        max_age=43200,     # 12 小時，與 JWT exp 一致
+        max_age=data["expires_in"],  # 與 JWT 過期時間一致
     )
     return response
 ```
@@ -992,7 +993,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 - [ ] App `.env` 中設定了 `AUTH_CENTER_BASE_URL`、`APP_ID`、`CLIENT_SECRET`、`REDIRECT_URI`
 - [ ] 實作了未登入時的 302 重導邏輯
 - [ ] 實作了 `/auth/callback` 端點（code → token 交換）
-- [ ] Token 存入 HttpOnly + Secure + SameSite Cookie
+- [ ] Token 存入 HttpOnly + SameSite Cookie
 - [ ] 實作了 `get_current_user` JWT 驗證（含 audience 檢查）
 - [ ] 測試：完整登入流程（導流 → 登入 → callback → 受保護頁面）
 - [ ] 測試：Token 過期後自動重導重新登入
@@ -1127,6 +1128,8 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | 401 | `invalid_client` | app_id 不存在或 client_secret 錯誤 |
 | 400 | `invalid_grant` | code 無效、過期或已被使用 |
 | 400 | `staff_not_found` | 員工資料異常 |
+| 403 | `no_permission` | 使用者無此 App 的存取權限 |
+| 429 | `rate_limited` | 請求過於頻繁，請稍後再試 |
 
 ---
 
