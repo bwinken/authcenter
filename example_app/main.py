@@ -385,7 +385,10 @@ async def login_for_swagger(
         f"{AUTH_CENTER_BASE_URL}/auth/login",
         params={"app_id": APP_ID, "redirect_uri": REDIRECT_URI},
     )
-    csrf_token = login_page.cookies.get("csrf_token", "")
+    # login_page.cookies 只含該次 response 新設定的 cookie，
+    # 若 cookie jar 已有 csrf_token，伺服器不會重新 Set-Cookie，
+    # 因此需要 fallback 到 client cookie jar。
+    csrf_token = login_page.cookies.get("csrf_token") or client.cookies.get("csrf_token", "")
 
     # Step 2: 向 Auth Center 提交登入（模擬表單 POST，帶 CSRF token）
     login_resp = await client.post(
