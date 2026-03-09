@@ -831,6 +831,9 @@ async def assign_app_admin(
     )
     await sqlite_session.commit()
 
+    # App Admin ↔ Level 3 雙向同步：指派 App Admin 時自動授予 Level 3
+    await service.grant_user_permission(sqlite_session, employee_name, app_id, level=3, granted_by=admin_name)
+
     await _log_action(
         sqlite_session, admin_name, "assign_app_admin", target=f"{employee_name}→{app_id}",
 
