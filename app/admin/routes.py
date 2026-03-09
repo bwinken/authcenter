@@ -2,6 +2,8 @@
 
 import hmac
 import secrets
+import time
+from urllib.parse import urlencode
 
 import jwt
 from fastapi import APIRouter, Cookie, Depends, Form, Query, Request
@@ -288,17 +290,20 @@ async def admin_dashboard(
     request: Request,
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
+    show_link: str = Query(default=""),
 ):
     """管理後台總覽頁。
 
     顯示已註冊 App 數量、個人權限記錄數、App Admin 數量等統計資訊。
     Super Admin 看到所有 App，App Admin 只看到自己管理的 App。
+    當帶有 show_link 參數時，查詢該員工最新的 registration token 並顯示連結。
     """
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
 
     templates = _get_templates()
+    settings = get_settings()
     apps = load_registered_apps()
 
     # Count permissions
@@ -322,6 +327,23 @@ async def admin_dashboard(
     ctx = _base_ctx(request, admin, "dashboard",
                     apps=apps, perm_count=perm_count, admin_count=admin_count,
                     admin_apps=admin_apps, pending_registrations=pending)
+
+    # 若有 show_link 參數，查詢該員工最新的 registration token 並顯示連結
+    if show_link.strip() and admin.get("is_super"):
+        employee_name = show_link.strip().lower()
+        result = await sqlite_session.execute(
+            text(
+                "SELECT token FROM registration_tokens "
+                "WHERE employee_name = :ename AND expires_at > :now "
+                "ORDER BY expires_at DESC LIMIT 1"
+            ),
+            {"ename": employee_name, "now": time.time()},
+        )
+        row = result.fetchone()
+        if row:
+            link = f"{settings.AUTH_CENTER_BASE_URL}/auth/register?token={row[0]}"
+            ctx["register_link_info"] = {"employee_name": employee_name, "link": link}
+
     return templates.TemplateResponse("admin_dashboard.html", ctx)
 
 
@@ -335,6 +357,7 @@ async def generate_register_link(
     """管理員產生註冊連結（24 小時有效）。
 
     取代 CLI 工具，讓管理員在 Dashboard 直接產生連結。
+    使用 PRG 模式：產生後重導回 Dashboard，避免重新整理頁面時重複產生。
     """
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
@@ -362,25 +385,9 @@ async def generate_register_link(
 
     )
 
-    templates = _get_templates()
-    # Re-render dashboard with the generated link
-    apps = load_registered_apps()
-    result = await sqlite_session.execute(text("SELECT COUNT(*) FROM user_app_permissions"))
-    perm_count = result.scalar() or 0
-    result = await sqlite_session.execute(text("SELECT COUNT(*) FROM app_admins"))
-    admin_count = result.scalar() or 0
-    admin_apps = []
-    if not admin.get("is_super"):
-        admin_apps = await _get_admin_apps(sqlite_session, admin["sub"])
-    pending = await service.get_pending_registrations(sqlite_session)
-    if not admin.get("is_super") and admin_apps:
-        pending = [p for p in pending if p["app_id"] in admin_apps]
-
-    ctx = _base_ctx(request, admin, "dashboard",
-                    apps=apps, perm_count=perm_count, admin_count=admin_count,
-                    admin_apps=admin_apps, pending_registrations=pending)
-    ctx["register_link_info"] = {"employee_name": employee_name, "link": link}
-    return templates.TemplateResponse("admin_dashboard.html", ctx)
+    # PRG: 重導回 Dashboard，帶上 show_link 參數以顯示產生的連結
+    qs = urlencode({"show_link": employee_name})
+    return RedirectResponse(f"/admin/dashboard?{qs}", status_code=303)
 
 
 @router.post("/deny-registration")
@@ -1104,7 +1111,6 @@ async def delete_user_account(
     
         )
 
-    from urllib.parse import urlencode
     if deleted:
         qs = urlencode({"msg": f"已刪除 {employee_name} 的帳號與權限記錄。"})
     else:
