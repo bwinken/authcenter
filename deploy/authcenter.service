@@ -4,13 +4,13 @@ After=network.target
 
 [Service]
 Type=exec
-WorkingDirectory=%h/opt/authcenter
-EnvironmentFile=%h/opt/authcenter/.env
+WorkingDirectory=/home/kane.beh/opt/authcenter
+EnvironmentFile=/home/kane.beh/opt/authcenter/.env
 # 如需透過 Proxy 連外網（uv sync / webhook），取消下方註解
 # Environment="HTTP_PROXY=http://proxy.company.com:8080"
 # Environment="HTTPS_PROXY=http://proxy.company.com:8080"
 # Environment="NO_PROXY=localhost,127.0.0.1"
-ExecStart=%h/.local/bin/uv run fastapi run app/main.py \
+ExecStart=/home/kane.beh/.local/bin/uv run fastapi run app/main.py \
     --host 127.0.0.1 \
     --port ${APP_PORT} \
     --workers 2
