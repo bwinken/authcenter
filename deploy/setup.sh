@@ -4,7 +4,7 @@
 # 部署到 ~/authcenter，以當前使用者身份執行（不需要 sudo）
 set -e
 
-APP_DIR="$HOME/authcenter"
+APP_DIR="$HOME/opt/authcenter"
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Proxy 設定（只需設定 http_proxy 即可，不需要則留空）
