@@ -1,10 +1,10 @@
 #!/bin/bash
 # AuthCenter 部署腳本（User-Level）
 # 用法: bash deploy/setup.sh
-# 部署到 ~/authcenter，以當前使用者身份執行（不需要 sudo）
+# 部署到 /home/kane.beh/opt/authcenter，以當前使用者身份執行（不需要 sudo）
 set -e
 
-APP_DIR="$HOME/opt/authcenter"
+APP_DIR="/home/kane.beh/opt/authcenter"
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Proxy 設定（只需設定 http_proxy 即可，不需要則留空）
@@ -67,8 +67,8 @@ chmod 600 "$APP_DIR/.env"
 chmod 600 "$APP_DIR/keys/"*.pem
 
 echo "=== 5. 安裝 user-level systemd service ==="
-mkdir -p "$HOME/.config/systemd/user"
-cp "$APP_DIR/deploy/authcenter.service" "$HOME/.config/systemd/user/"
+mkdir -p "/home/kane.beh/.config/systemd/user"
+cp "$APP_DIR/deploy/authcenter.service" "/home/kane.beh/.config/systemd/user/"
 systemctl --user daemon-reload
 systemctl --user enable authcenter
 systemctl --user restart authcenter
