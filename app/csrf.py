@@ -32,6 +32,8 @@ EXEMPT_PATHS = {
     "/auth/register",
     "/auth/forgot-password",
     "/admin/login",
+    "/oidc/authorize",
+    "/oidc/token",
 }
 
 

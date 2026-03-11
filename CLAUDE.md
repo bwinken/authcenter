@@ -45,6 +45,10 @@ Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` 
 
 `POST /auth/login` → verify staff (MSSQL) → check account (SQLite) → bcrypt password → check app access rules → generate one-time auth code (5min TTL) → 303 redirect with `?code=xxx`. App backend then calls `POST /auth/token` with `code + client_secret` → gets RS256 JWT (12h).
 
+### OIDC Provider
+
+Standard OIDC endpoints in `app/oidc/` for OAuth2 proxy integration. Discovery at `/.well-known/openid-configuration`, JWKS at `/.well-known/jwks.json`, authorize at `/oidc/authorize`, token at `/oidc/token` (returns `access_token` + `id_token`), userinfo at `/oidc/userinfo`. ID token uses `AUTH_CENTER_BASE_URL` as `iss` (vs `"auth-center"` for access tokens). Auth codes store `nonce` for OIDC replay protection. Supports `client_secret_post` and `client_secret_basic`.
+
 ### Permission Model (Per-User-Per-App Level)
 
 Each user must have an explicit entry in `user_app_permissions` to access an app. No permission entry = access denied (403). The `level` integer maps to scopes automatically: 0→`[]`(denied), 1→`[read]`, 2→`[read,write]`, 3→`[read,write,admin]`. Level 0 explicitly denies access even if organization default would allow it. **Personal permission overrides org restriction**: if a user has an explicit `user_app_permissions` entry, access is determined solely by that level — `allowed_orgs` is NOT checked. Organization-based filtering via `allowed_orgs` only applies when there is no personal permission entry (fallback to org default). Default permission (`default_level`) only supports Level 1 and 2; Level 3 must be explicitly granted per user.
@@ -69,7 +73,7 @@ Super Admin supports two login methods: (1) `.env` fixed credentials (`ADMIN_USE
 ## Conventions
 
 - Language: Code in English, UI/docstrings/comments in Traditional Chinese
-- All routes return Jinja2 HTML (no SPA) except `POST /auth/token` which returns JSON
-- Admin routes are in `app/admin/routes.py`, user auth routes in `app/auth/routes.py`
+- All routes return Jinja2 HTML (no SPA) except `POST /auth/token` and OIDC endpoints which return JSON
+- Admin routes are in `app/admin/routes.py`, user auth routes in `app/auth/routes.py`, OIDC routes in `app/oidc/routes.py`
 - RSA keys in `keys/` directory (gitignored), paths configured via `.env`
 - `passlib[bcrypt]` requires `bcrypt==4.0.1` (pinned — bcrypt 5.x breaks passlib)

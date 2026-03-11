@@ -1,0 +1,44 @@
+# ============================================================
+# AuthCenter App 註冊範本 — HFS 檔案伺服器
+# ============================================================
+# 使用方式:
+#   將以下內容合併到 AuthCenter 的 config/apps.yaml 中，
+#   或透過 Admin 後台的「App 管理 → 新增應用程式」功能新增。
+#
+# 注意事項:
+#   - client_secret 欄位存放的是 bcrypt hash（不是明文）
+#   - 明文 secret 需填入 OAuth2 Proxy 的 .env（CLIENT_SECRET）
+#   - redirect_uri 必須與 OAuth2 Proxy 的 REDIRECT_URL 完全一致
+# ============================================================
+
+apps:
+  # ─── HFS 檔案伺服器 ───
+  - app_id: "hfs_file_server"
+
+    # 應用程式顯示名稱（登入頁面會顯示「登入以存取 內部檔案伺服器」）
+    name: "內部檔案伺服器"
+
+    # Client Secret 的 bcrypt hash
+    # 明文範例: replace_with_a_strong_secret
+    # 產生方式: python -c "from passlib.hash import bcrypt; print(bcrypt.hash('你的密碼'))"
+    # ⚠️ 部署時務必替換為自己產生的 secret！
+    client_secret: "$2b$12$15jaBOjaMUPQQdljzXtaUOm602U3IsyYsHVbAxahctk34/qN9gBZu"
+
+    # OAuth2 Proxy 的 callback URL（必須完全匹配，含 protocol + domain + path）
+    redirect_uri: "https://files.company.com/oauth2/callback"
+
+    # ─── 存取規則（可選）───
+
+    # 允許的組織（空陣列 = 不限組織）
+    # ⚠️ 若為空陣列，default_level 不生效 — 每個使用者都需手動授權才能存取。
+    #    如果希望特定部門全員可用，填入組織代碼並搭配 default_level。
+    #    例如: allowed_orgs: ["IT", "RD"] + default_level: 1 → IT、RD 全員可讀取
+    allowed_orgs: []
+
+    # 組織內使用者的預設權限等級（僅在 allowed_orgs 非空時生效）
+    # 1 = Read, 2 = Read + Write（Level 3 admin 必須逐人授權）
+    default_level: 0
+
+    # JWT Token 有效時間（小時），預設 12
+    # 檔案伺服器建議設長一些，避免下載大檔案時 Token 過期
+    token_expire_hours: 24

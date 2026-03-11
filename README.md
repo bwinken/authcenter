@@ -23,9 +23,10 @@
 11. [JWT Token 格式](#11-jwt-token-格式)
 12. [資料庫架構](#12-資料庫架構)
 13. [CLI 管理工具](#13-cli-管理工具)
-14. [安全機制](#14-安全機制)
-15. [安全測試](#15-安全測試)
-16. [專案結構](#16-專案結構)
+14. [OIDC 整合（OAuth2 Proxy）](#14-oidc-整合oauth2-proxy)
+15. [安全機制](#15-安全機制)
+16. [安全測試](#16-安全測試)
+17. [專案結構](#17-專案結構)
 
 ---
 
@@ -1100,6 +1101,17 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `GET` | `/admin/access-log` | 存取紀錄頁面 | Super / App Admin |
 | `GET` | `/admin/audit-log` | 操作紀錄頁面 | Super / App Admin |
 
+### OIDC 端點
+
+| 方法 | 路徑 | 說明 |
+|------|------|------|
+| `GET` | `/.well-known/openid-configuration` | OIDC Discovery document |
+| `GET` | `/.well-known/jwks.json` | JWK Set（RS256 公鑰，含 `kid`） |
+| `GET` | `/oidc/authorize` | OIDC Authorization（渲染登入頁面） |
+| `POST` | `/oidc/authorize` | 處理登入，redirect 帶 `code` + `state` |
+| `POST` | `/oidc/token` | 標準 OIDC token exchange（回傳 `access_token` + `id_token`） |
+| `GET` | `/oidc/userinfo` | UserInfo（Bearer token → 使用者 claims） |
+
 ### `POST /auth/token` 詳細規格
 
 **Request：**
@@ -1160,6 +1172,38 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 
 > **Admin JWT** 有效期為 2 小時，`aud` 為 `auth-center-admin`，並額外包含 `is_super` 欄位。
 
+### OIDC ID Token 格式
+
+透過 `/oidc/token` 端點簽發的 `id_token`，符合 OpenID Connect 規範：
+
+```json
+{
+  "iss": "https://your-auth-center.com",
+  "sub": "kane.beh",
+  "aud": "ai_chat_app",
+  "iat": 1709000000,
+  "exp": 1709043200,
+  "auth_time": 1709000000,
+  "nonce": "random-nonce-from-client",
+  "name": "kane.beh",
+  "preferred_username": "kane.beh",
+  "org_id": "IT"
+}
+```
+
+| 欄位 | 說明 |
+|------|------|
+| `iss` | 簽發者（`AUTH_CENTER_BASE_URL`，與 discovery document 一致） |
+| `sub` | 使用者名稱 |
+| `aud` | 目標 App 的 `client_id`（= `app_id`） |
+| `auth_time` | 使用者認證時間 (Unix timestamp) |
+| `nonce` | 來自 authorize 請求的 nonce（防 replay attack） |
+| `name` | 使用者名稱 |
+| `preferred_username` | 使用者名稱 |
+| `org_id` | 組織代碼 |
+
+> **注意**：`id_token` 的 `iss` 使用 `AUTH_CENTER_BASE_URL`（OIDC 規範），而一般 `access_token` 的 `iss` 仍為 `"auth-center"`（向後相容）。JWT header 包含 `kid` 以對應 JWKS 中的公鑰。
+
 ---
 
 ## 12. 資料庫架構
@@ -1191,6 +1235,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `employee_name` | VARCHAR(50) | 使用者名稱 |
 | `app_id` | VARCHAR(100) | 目標 App |
 | `expires_at` | REAL | 過期時間（Unix timestamp，5 分鐘） |
+| `nonce` | VARCHAR(255) | OIDC nonce（防 replay，OIDC 流程使用） |
 
 **`registration_tokens`** — 註冊令牌
 
@@ -1300,7 +1345,293 @@ Level 說明：`1` = Read、`2` = Read + Write、`3` = Full Admin
 
 ---
 
-## 14. 安全機制
+## 14. OIDC 整合（OAuth2 Proxy）
+
+Auth Center 提供標準 OpenID Connect 端點，可作為 OIDC Provider 供 OAuth2 Proxy（如 [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/)）使用。
+
+### OIDC 端點總覽
+
+| 端點 | 路徑 | 說明 |
+|------|------|------|
+| Discovery | `/.well-known/openid-configuration` | 自動發現所有 OIDC 端點 |
+| JWKS | `/.well-known/jwks.json` | RS256 公鑰（JWK Set 格式，含 `kid`） |
+| Authorize | `/oidc/authorize` | 標準授權端點（`response_type=code`） |
+| Token | `/oidc/token` | Code → `access_token` + `id_token` 交換 |
+| UserInfo | `/oidc/userinfo` | Bearer token → 使用者 claims |
+
+### 主流程：OAuth2 Proxy 透過 OIDC 認證
+
+```mermaid
+sequenceDiagram
+    participant U as 使用者瀏覽器
+    participant App as 受保護的服務
+    participant P as OAuth2 Proxy
+    participant C as Auth Center (OIDC)
+    participant M as MSSQL (IT Master)
+    participant S as SQLite (Auth Local)
+
+    U->>P: 1. 訪問受保護的服務
+    P->>P: 2. 檢查 Session Cookie → 沒有
+
+    Note over P: 3. Proxy 發起 OIDC 授權請求
+    P-->>U: 302 → Auth Center /oidc/authorize<br/>?response_type=code<br/>&client_id=my_app<br/>&redirect_uri=https://app/oauth2/callback<br/>&scope=openid<br/>&state=random_state<br/>&nonce=random_nonce
+
+    U->>C: 4. GET /oidc/authorize（帶 OIDC 標準參數）
+    C-->>U: 5. 回傳登入頁面 HTML（含 state/nonce 隱藏欄位）
+
+    U->>C: 6. POST /oidc/authorize {employee_name, password, state, nonce}
+
+    Note over C,S: 7. Auth Center 內部驗證（與 /auth/login 相同）
+    C->>M: ① 查詢員工是否在職
+    M-->>C: 回傳 org_id
+    C->>S: ② 查詢帳號是否已註冊
+    S-->>C: 帳號存在
+    C->>S: ③ 比對 bcrypt 密碼雜湊
+    S-->>C: 密碼正確
+    C->>S: ④ 查詢 user_app_permissions（per-app level）
+    S-->>C: level 存在
+    C->>S: ⑤ 產生 Authorization Code（5 分鐘有效，含 nonce）
+
+    C-->>U: 8. 303 重導 {redirect_uri}?code=abc123&state=random_state
+    U->>P: 9. GET /oauth2/callback?code=abc123&state=random_state
+
+    Note over P: 10. Proxy 驗證 state 一致
+    P->>C: 11. POST /oidc/token（server-to-server）
+    Note over P,C: grant_type=authorization_code<br/>code=abc123<br/>client_id=my_app<br/>client_secret=xxx<br/>redirect_uri=https://app/oauth2/callback
+
+    C->>S: 消耗 auth code（原子 DELETE RETURNING）
+    C->>M: 查詢員工資料以簽發 Token
+    M-->>C: staff info
+    C->>C: 簽發 access_token（iss=auth-center）<br/>+ id_token（iss=AUTH_CENTER_BASE_URL, 含 nonce）
+
+    C-->>P: 12. 回傳 {access_token, id_token, token_type, expires_in}
+
+    Note over P: 13. Proxy 驗證 id_token
+    P->>C: GET /.well-known/jwks.json（首次或快取過期時）
+    C-->>P: JWK Set（RS256 公鑰 + kid）
+    P->>P: 用 JWKS 驗證 id_token 簽章<br/>+ 驗證 iss / aud / exp / nonce
+
+    P-->>U: 14. Set-Cookie（Proxy Session），放行請求
+    U->>P: 15. 後續請求自動帶 Session Cookie
+    P->>App: 轉發請求（注入 X-Forwarded-User header）
+    App-->>U: 回傳受保護的內容
+```
+
+### 內部驗證步驟
+
+使用者在 OIDC 登入頁提交帳密後，Auth Center 執行與 `/auth/login` 完全相同的 5 個驗證步驟：
+
+| 步驟 | 操作 | 資料來源 | 失敗結果 |
+|------|------|----------|----------|
+| ① | 查詢員工是否在職 | MSSQL `staff` 表 | 回傳「使用者名稱或密碼錯誤」 |
+| ② | 查詢帳號是否已註冊 | SQLite `user_accounts` 表 | 導向註冊流程（login_url 指回 OIDC authorize） |
+| ③ | bcrypt 比對密碼 | SQLite `user_accounts` 表 | 回傳「使用者名稱或密碼錯誤」 |
+| ④ | 檢查 App 存取權限 | `allowed_orgs` + `user_app_permissions` | 回傳「無權存取」 |
+| ⑤ | 產生 Authorization Code | SQLite `auth_codes` 表（含 `nonce`） | — |
+
+### 分支流程：驗證失敗
+
+```mermaid
+sequenceDiagram
+    participant U as 使用者瀏覽器
+    participant P as OAuth2 Proxy
+    participant C as Auth Center (OIDC)
+
+    Note over U,C: ── 情境 A：帳密錯誤 ──
+    U->>C: POST /oidc/authorize {employee_name, password}
+    C-->>U: 回傳登入頁 + 錯誤訊息（保留 state/nonce 隱藏欄位）
+    Note over U: 使用者停留在登入頁，不會產生 code
+
+    Note over U,C: ── 情境 B：Code 過期或已消耗 ──
+    P->>C: POST /oidc/token {code=expired, client_id, client_secret}
+    C-->>P: 400 {"error": "invalid_grant"}
+    P-->>U: 302 → 重新發起 OIDC 授權
+
+    Note over U,C: ── 情境 C：Client Secret 錯誤 ──
+    P->>C: POST /oidc/token {code, client_id, client_secret=wrong}
+    C-->>P: 401 {"error": "invalid_client"}
+    P-->>U: 500 Internal Error
+
+    Note over U,C: ── 情境 D：不支援的 response_type ──
+    P->>C: GET /oidc/authorize?response_type=token
+    C-->>P: 400 {"error": "unsupported_response_type"}
+```
+
+### 分支流程：首次登入（未註冊帳號）
+
+```mermaid
+sequenceDiagram
+    participant U as 使用者瀏覽器
+    participant P as OAuth2 Proxy
+    participant C as Auth Center (OIDC)
+    participant T as Microsoft Teams
+
+    U->>P: 訪問受保護服務
+    P-->>U: 302 → /oidc/authorize?...&state=S&nonce=N
+
+    U->>C: POST /oidc/authorize {employee_name, password}
+    C->>C: 員工存在但尚未註冊帳號
+
+    C-->>U: 顯示「尚未註冊」確認頁
+    Note over U,C: login_url 指回 /oidc/authorize?...&state=S&nonce=N<br/>確保註冊完成後回到 OIDC 流程
+
+    U->>C: POST /auth/request-register（發送 Teams 通知）
+    C->>T: 發送 Adaptive Card 通知管理員
+    Note over U: 等待管理員審核、收到註冊連結、完成註冊
+
+    U->>P: 重新訪問受保護服務
+    P-->>U: 302 → /oidc/authorize?...（重新發起 OIDC 流程）
+    U->>C: 正常登入（帳號已建立）
+    Note over U,C: 走主流程完成認證
+```
+
+### OIDC Discovery 與 JWKS
+
+```mermaid
+flowchart LR
+    subgraph 啟動階段
+        A["OAuth2 Proxy 啟動"] --> B["GET /.well-known/openid-configuration"]
+        B --> C["取得所有端點 URL"]
+        C --> D["GET /.well-known/jwks.json"]
+        D --> E["快取 RS256 公鑰（kid 對應）"]
+    end
+
+    subgraph 認證階段
+        F["收到 id_token"] --> G["從 JWT header 取 kid"]
+        G --> H{"kid 在快取中？"}
+        H -->|是| I["用對應公鑰驗證簽章"]
+        H -->|否| J["重新 GET /.well-known/jwks.json"]
+        J --> I
+    end
+```
+
+**Discovery Document 回傳內容（`GET /.well-known/openid-configuration`）：**
+
+```json
+{
+  "issuer": "https://your-auth-center.com",
+  "authorization_endpoint": "https://your-auth-center.com/oidc/authorize",
+  "token_endpoint": "https://your-auth-center.com/oidc/token",
+  "userinfo_endpoint": "https://your-auth-center.com/oidc/userinfo",
+  "jwks_uri": "https://your-auth-center.com/.well-known/jwks.json",
+  "response_types_supported": ["code"],
+  "subject_types_supported": ["public"],
+  "id_token_signing_alg_values_supported": ["RS256"],
+  "scopes_supported": ["openid", "profile"],
+  "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
+  "grant_types_supported": ["authorization_code"]
+}
+```
+
+### `POST /oidc/token` 詳細規格
+
+**Request（`application/x-www-form-urlencoded`）：**
+
+```
+grant_type=authorization_code
+&code=dBjftJeZ4CVP-mB92K27uhbUJU1p...
+&client_id=ai_chat_app
+&client_secret=chat_secret_123
+&redirect_uri=https://app.example.com/oauth2/callback
+```
+
+也可使用 `client_secret_basic` 認證（`Authorization: Basic base64(client_id:client_secret)`），此時 body 中省略 `client_id` 和 `client_secret`。
+
+**Success Response (200)：**
+
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiJ9...",
+  "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6Ind...",
+  "token_type": "bearer",
+  "expires_in": 43200
+}
+```
+
+**Error Responses：**
+
+| Status | Error | 說明 |
+|--------|-------|------|
+| 400 | `unsupported_grant_type` | `grant_type` 不是 `authorization_code` |
+| 400 | `invalid_grant` | code 無效、過期、已被使用、或 redirect_uri 不匹配 |
+| 400 | `staff_not_found` | 員工資料異常 |
+| 401 | `invalid_client` | client_id 不存在或 client_secret 錯誤 |
+| 403 | `no_permission` | 使用者無此 App 的存取權限 |
+| 429 | `rate_limited` | 請求過於頻繁 |
+
+### OAuth2 Proxy 設定範例
+
+```
+--provider=oidc
+--oidc-issuer-url=https://your-auth-center.com
+--client-id=your-app-id
+--client-secret=your-app-plaintext-secret
+--redirect-url=https://your-app.com/oauth2/callback
+--oidc-extra-audience=your-app-id
+--user-id-claim=sub
+--insecure-oidc-allow-unverified-email=true
+```
+
+**必要前置設定：**
+
+1. 在 `config/apps.yaml` 或 Admin 後台註冊 App，`redirect_uri` 設為 OAuth2 Proxy 的 callback URL（如 `https://your-app.com/oauth2/callback`）
+2. 確保 `AUTH_CENTER_BASE_URL`（`.env`）與 OAuth2 Proxy 的 `--oidc-issuer-url` 一致
+3. 為需要存取的使用者設定權限（Level 1 以上）
+
+### Token 端點認證方式
+
+OIDC Token 端點支援兩種 client 認證方式：
+
+| 方式 | 說明 |
+|------|------|
+| `client_secret_post` | `client_id` + `client_secret` 放在 POST body |
+| `client_secret_basic` | `Authorization: Basic base64(client_id:client_secret)` header |
+
+### 與現有 `/auth/*` 端點的關係
+
+OIDC 端點（`/oidc/*`）與現有的 `/auth/*` 端點**完全獨立並存**，核心認證邏輯共用，不會互相影響：
+
+```mermaid
+flowchart TB
+    subgraph 入口層
+        A1["GET /auth/login<br/>（自訂參數：app_id, redirect_uri）"]
+        A2["GET /oidc/authorize<br/>（標準 OAuth2：client_id, response_type, state, nonce）"]
+    end
+
+    subgraph 共用核心
+        B["service.authenticate()"]
+        C["service.check_app_access()"]
+        D["service.generate_auth_code()"]
+        E["service.consume_auth_code()"]
+    end
+
+    subgraph Token 簽發
+        F1["POST /auth/token<br/>→ access_token"]
+        F2["POST /oidc/token<br/>→ access_token + id_token"]
+    end
+
+    A1 --> B --> C --> D
+    A2 --> B
+    D --> F1
+    D --> F2
+    F1 --> E
+    F2 --> E
+```
+
+| | `/auth/*`（現有） | `/oidc/*`（新增） |
+|---|---|---|
+| 用途 | 內部 AI App 直接整合 | OAuth2 Proxy / 標準 OIDC Client |
+| 授權端點 | `GET /auth/login` | `GET /oidc/authorize` |
+| Token 端點 | `POST /auth/token`（JSON body） | `POST /oidc/token`（form / JSON） |
+| 回傳內容 | `access_token` | `access_token` + `id_token` |
+| Token `iss` | `"auth-center"` | `AUTH_CENTER_BASE_URL` |
+| 參數格式 | `app_id` + `redirect_uri` | 標準 OAuth2（`client_id`, `response_type`, `state`, `nonce`） |
+| CSRF 保護 | state 不需要（form-based） | `state` 參數透傳（Proxy 自行驗證） |
+| Replay 防護 | 不需要 | `nonce` 寫入 auth code + id_token |
+
+---
+
+## 15. 安全機制
 
 | 機制 | 說明 |
 |------|------|
@@ -1330,7 +1661,7 @@ Level 說明：`1` = Read、`2` = Read + Write、`3` = Full Admin
 
 ---
 
-## 15. 安全測試
+## 16. 安全測試
 
 `example_app/security_tests.py` 是一套整合安全測試腳本，針對已啟動的 Auth Center 執行自動化安全性驗證。涵蓋 9 大類、31 項測試：
 
@@ -1370,7 +1701,7 @@ python example_app/security_tests.py --list
 
 ---
 
-## 16. 專案結構
+## 17. 專案結構
 
 ```
 auth-center/
@@ -1387,6 +1718,9 @@ auth-center/
 │   │   └── jwt_handler.py   # RS256 JWT 簽發與驗證
 │   ├── admin/
 │   │   └── routes.py        # Admin 管理後台路由（Super Admin + App Admin）
+│   ├── oidc/
+│   │   ├── routes.py        # OIDC 端點（discovery, authorize, token, userinfo）
+│   │   └── jwks.py          # PEM → JWK Set 轉換
 │   ├── webhook/
 │   │   └── teams.py         # Teams Webhook 通知
 │   └── templates/           # Jinja2 前端模板

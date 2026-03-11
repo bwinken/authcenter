@@ -452,9 +452,11 @@ async def exchange_token(
         return JSONResponse({"error": "invalid_client"}, status_code=401)
 
     # Consume the authorization code (SQLite-backed)
-    employee_name = await service.consume_auth_code(sqlite_session, body.code, body.app_id)
-    if employee_name is None:
+    code_data = await service.consume_auth_code(sqlite_session, body.code, body.app_id)
+    if code_data is None:
         return JSONResponse({"error": "invalid_grant"}, status_code=400)
+
+    employee_name = code_data["employee_name"]
 
     # Fetch staff info to build token payload
     staff = await service.verify_staff(mssql_session, employee_name)

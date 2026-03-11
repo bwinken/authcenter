@@ -1,0 +1,4 @@
+# setup.sh 執行時產生的檔案
+.env
+docker-compose.yml.template
+data/

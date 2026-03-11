@@ -4,9 +4,12 @@
     <p class="subtitle" style="margin-bottom: 24px;">登入以存取 {{ app_name }}</p>
     {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
     {% if not fatal %}
-    <form method="POST" action="/auth/login">
+    <form method="POST" action="{{ form_action|default('/auth/login') }}">
         <input type="hidden" name="app_id" value="{{ app_id }}">
         <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+        {% if oidc_state is defined %}<input type="hidden" name="oidc_state" value="{{ oidc_state }}">{% endif %}
+        {% if oidc_nonce is defined %}<input type="hidden" name="oidc_nonce" value="{{ oidc_nonce }}">{% endif %}
+        {% if oidc_scope is defined %}<input type="hidden" name="oidc_scope" value="{{ oidc_scope }}">{% endif %}
         <div class="form-group">
             <label for="employee_name">使用者名稱</label>
             <input type="text"

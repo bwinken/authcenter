@@ -1,0 +1,105 @@
+# ============================================================
+# Docker Compose — OAuth2 Proxy + Rejetto HFS (Sidecar 模式)
+# ============================================================
+# 架構:
+#   Nginx (Host) -> oauth2-proxy (127.0.0.1:4180) -> hfs (Docker 內網 :80)
+#
+# 使用方式:
+#   1. 複製 .env.example 為 .env，填入實際值
+#   2. docker compose up -d
+#   3. docker compose logs -f
+# ============================================================
+
+services:
+  # ─── OAuth2 Proxy ─────────────────────────────────────────
+  # 攔截所有未登入的請求，導向 AuthCenter 進行 OIDC 認證。
+  # 認證成功後，將請求轉發至 HFS 檔案伺服器。
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    container_name: oauth2-proxy
+    restart: unless-stopped
+    ports:
+      # 僅綁定 localhost，嚴禁對外暴露（由 Host Nginx 代理）
+      - "127.0.0.1:4180:4180"
+    environment:
+      # ─── OIDC Provider 設定 ───
+      # AuthCenter 的對外 URL（必須與 AUTH_CENTER_BASE_URL 一致）
+      OAUTH2_PROXY_PROVIDER: "oidc"
+      OAUTH2_PROXY_OIDC_ISSUER_URL: "${OIDC_ISSUER_URL}"
+
+      # ─── Client 憑證（在 AuthCenter 的 apps.yaml 中註冊）───
+      OAUTH2_PROXY_CLIENT_ID: "${CLIENT_ID}"
+      OAUTH2_PROXY_CLIENT_SECRET: "${CLIENT_SECRET}"
+
+      # ─── Redirect URL（OAuth2 callback，必須與 apps.yaml 的 redirect_uri 一致）───
+      OAUTH2_PROXY_REDIRECT_URL: "${REDIRECT_URL}"
+
+      # ─── Upstream（認證成功後轉發至 HFS，透過 Docker 內網）───
+      OAUTH2_PROXY_UPSTREAMS: "http://hfs:80"
+
+      # ─── Cookie 設定 ───
+      # Cookie 加密密鑰（必須 16/24/32 bytes，用 openssl rand -base64 32 產生）
+      OAUTH2_PROXY_COOKIE_SECRET: "${COOKIE_SECRET}"
+      OAUTH2_PROXY_COOKIE_SECURE: "false"        # 內網 HTTP 環境設 false；HTTPS 環境改 true
+      OAUTH2_PROXY_COOKIE_SAMESITE: "lax"
+
+      # ─── 監聽設定 ───
+      OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:4180"
+
+      # ─── 行為設定 ───
+      # AuthCenter 沒有 email，用 sub (employee_name) 作為使用者識別
+      OAUTH2_PROXY_USER_ID_CLAIM: "sub"
+      OAUTH2_PROXY_OIDC_EMAIL_CLAIM: "sub"
+      OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: "true"
+
+      # 允許所有通過 OIDC 認證的使用者（權限由 AuthCenter 的 Level 控制）
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+
+      # 將使用者資訊注入 Header 傳給 Upstream
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "true"
+
+      # 反向代理 Headers（Nginx 傳入的原始 IP 等資訊）
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_REAL_CLIENT_IP_HEADER: "X-Forwarded-For"
+
+      # Scope（僅需 openid，AuthCenter 不使用 email scope）
+      OAUTH2_PROXY_SCOPE: "openid"
+
+      # 跳過 Provider 按鈕頁面，直接導向 AuthCenter 登入
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+    # ─── 內網 DNS 解析（依需求啟用）───
+    # 如果 AuthCenter 使用內網 alias（如 auth.company.com），Docker 容器無法解析。
+    # 使用 setup.sh 部署會自動處理；手動部署時，取消以下註解並填入實際值：
+    # extra_hosts:
+    #   - "auth.company.com:192.168.1.100"
+    networks:
+      - internal
+    depends_on:
+      - hfs
+
+  # ─── Rejetto HFS 檔案伺服器 ──────────────────────────────
+  # 純粹的檔案伺服器，不暴露任何對外 Port。
+  # 只有 OAuth2 Proxy 可以透過 Docker 內網存取。
+  hfs:
+    image: rejetto/hfs:latest
+    container_name: hfs
+    restart: unless-stopped
+    # 不暴露 Port — 僅允許 Docker 內網存取
+    # ports: 不設定
+    volumes:
+      # 檔案儲存目錄（掛載 Host 目錄）
+      - ./data/files:/home/hfs/files
+      # HFS 設定檔持久化
+      - ./data/hfs-config:/home/hfs/.hfs
+    environment:
+      # HFS 管理員帳號（首次啟動設定，之後可在 HFS Web UI 修改）
+      HFS_ADMIN_USER: "${HFS_ADMIN_USER:-admin}"
+      HFS_ADMIN_PASSWORD: "${HFS_ADMIN_PASSWORD:-changeme}"
+    networks:
+      - internal
+
+networks:
+  # Docker 內部網路（oauth2-proxy <-> hfs）
+  internal:
+    driver: bridge

@@ -575,7 +575,7 @@ async def delete_user(sqlite_session: AsyncSession, employee_name: str) -> bool:
 
 
 async def generate_auth_code(
-    sqlite_session: AsyncSession, employee_name: str, app_id: str
+    sqlite_session: AsyncSession, employee_name: str, app_id: str, nonce: str = ""
 ) -> str:
     """Generate a one-time authorization code (stored in SQLite, 5-min TTL)."""
     employee_name = normalize_employee_name(employee_name)
@@ -583,10 +583,10 @@ async def generate_auth_code(
     expires_at = time.time() + AUTH_CODE_TTL
     await sqlite_session.execute(
         text(
-            "INSERT INTO auth_codes (code, employee_name, app_id, expires_at) "
-            "VALUES (:code, :ename, :aid, :exp)"
+            "INSERT INTO auth_codes (code, employee_name, app_id, expires_at, nonce) "
+            "VALUES (:code, :ename, :aid, :exp, :nonce)"
         ),
-        {"code": code, "ename": employee_name, "aid": app_id, "exp": expires_at},
+        {"code": code, "ename": employee_name, "aid": app_id, "exp": expires_at, "nonce": nonce},
     )
     await sqlite_session.commit()
     logger.info("Auth code generated for %s (app=%s)", employee_name, app_id)
@@ -595,18 +595,18 @@ async def generate_auth_code(
 
 async def consume_auth_code(
     sqlite_session: AsyncSession, code: str, app_id: str
-) -> str | None:
+) -> dict | None:
     """Validate and consume an authorization code atomically.
 
     Deletes first, then validates — prevents race condition where two
     concurrent requests could both consume the same code.
-    Returns employee_name if valid, None otherwise.
+    Returns {"employee_name": str, "nonce": str} if valid, None otherwise.
     """
     # Atomically delete and fetch in one step
     result = await sqlite_session.execute(
         text(
             "DELETE FROM auth_codes WHERE code = :code "
-            "RETURNING employee_name, app_id, expires_at"
+            "RETURNING employee_name, app_id, expires_at, nonce"
         ),
         {"code": code},
     )
@@ -618,6 +618,7 @@ async def consume_auth_code(
         return None
 
     employee_name, stored_app_id, expires_at = row[0], row[1], row[2]
+    nonce = row[3] if len(row) > 3 else ""
     if stored_app_id != app_id:
         logger.warning("Auth code consumption failed: app_id mismatch (expected=%s, got=%s)", stored_app_id, app_id)
         return None
@@ -626,7 +627,7 @@ async def consume_auth_code(
         return None
 
     logger.info("Auth code consumed for %s (app=%s)", employee_name, app_id)
-    return employee_name
+    return {"employee_name": employee_name, "nonce": nonce or ""}
 
 
 async def get_pending_registrations(sqlite_session: AsyncSession) -> list[dict]:
