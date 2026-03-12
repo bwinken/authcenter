@@ -2,15 +2,12 @@
 # Docker Compose — 全端整合
 # ============================================================
 # 架構:
-#   Nginx (Host，自行安裝)
-#     ├── /oauth2/*      -> OAuth2 Proxy  (127.0.0.1:4180) — 認證判斷
-#     ├── /.well-known/* -> AuthCenter    (自行部署)        — 公開端點
-#     ├── /auth/*        -> AuthCenter    (自行部署)        — 公開端點
-#     ├── /oidc/*        -> AuthCenter    (自行部署)        — 公開端點
-#     ├── /admin/*       -> AuthCenter    (自行部署)        — auth_request 保護
-#     ├── /api/*         -> 業務 API      (127.0.0.1:8058) — auth_request 保護
-#     ├── /fs/           -> HFS 檔案伺服器 (127.0.0.1:8080) — auth_request 保護
-#     └── /              -> 前端靜態檔 or 前端應用           — auth_request 保護
+#   AuthCenter 獨立部署在 auth.company.com（OIDC Provider + 管理後台）
+#   Nginx (Host，自行安裝) — sa-help.company.com
+#     ├── /oauth2/*  -> OAuth2 Proxy  (127.0.0.1:4180) — 認證判斷
+#     ├── /api/*     -> 業務 API      (127.0.0.1:8058) — auth_request 保護
+#     ├── /fs/       -> HFS 檔案伺服器 (127.0.0.1:8080) — auth_request 保護
+#     └── /          -> 前端靜態檔 or 前端應用           — auth_request 保護
 #
 # 使用方式:
 #   1. cp .env.example .env && 填入實際值

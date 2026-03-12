@@ -5,15 +5,21 @@
 ## 架構
 
 ```
-sa-help.company.com
-├── /.well-known/*  → AuthCenter  :8000  （公開）OIDC discovery
-├── /auth/*         → AuthCenter  :8000  （公開）登入/註冊
-├── /oidc/*         → AuthCenter  :8000  （公開）OIDC endpoints
-├── /admin/*        → AuthCenter  :8000  （需驗證）管理後台
-├── /api/v1/*       → 業務 API    :8058  （需驗證）含檔案上傳 50MB
-├── /fs/            → HFS         :8080  （需驗證）檔案伺服器 10GB
-└── /               → 前端靜態檔          （需驗證）
+auth.company.com        ← AuthCenter 獨立部署（OIDC Provider）
+├── /.well-known/*        OIDC discovery / JWKS
+├── /auth/*               登入/註冊/Token
+├── /oidc/*               OIDC endpoints
+└── /admin/*              管理後台（自帶認證）
+
+sa-help.company.com     ← 業務站台（本範例）
+├── /oauth2/*  → OAuth2 Proxy  :4180  （認證判斷）
+├── /admin/*   → 業務 API      :8058  （需驗證）管理後台
+├── /api/v1/*  → 業務 API      :8058  （需驗證）含檔案上傳 50MB
+├── /fs/       → HFS           :8080  （需驗證）檔案伺服器 10GB
+└── /          → 前端靜態檔            （需驗證）
 ```
+
+AuthCenter 和業務站台是**兩個獨立域名**。OAuth2 Proxy 透過 OIDC 協定自動跟 AuthCenter 溝通，業務站台的 Nginx 不需要代理 AuthCenter 的任何端點。
 
 ### 流量動線
 
@@ -21,18 +27,23 @@ sa-help.company.com
 使用者瀏覽器
     │
     ▼
-  Nginx (:80/443)
+  Nginx (:80/443)  ← sa-help.company.com
     │
     ├── 1. auth_request → OAuth2 Proxy (127.0.0.1:4180)
     │       「這人登入了嗎？」
     │       ├── 202 已登入 → 繼續，並從 response header 取出 access_token
-    │       └── 401 未登入 → 導向 /oauth2/sign_in → AuthCenter OIDC 登入
+    │       └── 401 未登入 → 302 到 /oauth2/sign_in
+    │                         → 302 到 auth.company.com/oidc/authorize（AuthCenter 登入）
+    │                         → 登入成功 → 302 回 /oauth2/callback
+    │                         → OAuth2 Proxy 用 code 換 token，設定 session cookie
     │
     ├── 2. 認證通過後，Nginx 將 access_token 注入 header：
-    │       - /api/*  → Authorization: Bearer <token>   （後端用這個驗 JWT）
-    │       - /fs/*   → X-Auth-Access-Token: <token>    （HFS 不驗 JWT，僅做紀錄）
+    │       - /admin/* → Authorization: Bearer <token>   （管理後台，驗 JWT）
+    │       - /api/*   → Authorization: Bearer <token>   （後端 API，驗 JWT）
+    │       - /fs/*    → X-Auth-Access-Token: <token>    （HFS 不驗 JWT，僅做紀錄）
     │
     └── 3. 轉發到對應後端
+            /admin/dashboard      → http://127.0.0.1:8058/admin/dashboard
             /api/v1/documents/xxx → http://127.0.0.1:8058/api/v1/documents/xxx
             /fs/myfile.pdf        → http://127.0.0.1:8080/myfile.pdf  (strip /fs/)
 ```
@@ -163,7 +174,7 @@ docker compose logs hfs --tail 20
 ss -tlnp | grep -E '4180|8000|8058|8080'
 # 應看到:
 #   127.0.0.1:4180  ← OAuth2 Proxy
-#   0.0.0.0:8000    ← AuthCenter（或 127.0.0.1:8000）
+#   0.0.0.0:8000    ← AuthCenter（管理後台 + OIDC Provider）
 #   0.0.0.0:8058    ← 業務 API
 #   127.0.0.1:8080  ← HFS
 
@@ -171,17 +182,17 @@ ss -tlnp | grep -E '4180|8000|8058|8080'
 sudo systemctl status nginx
 ```
 
-### 第二步：確認 AuthCenter OIDC 端點
+### 第二步：確認 AuthCenter OIDC 端點可達
 
 ```bash
-# OIDC Discovery — 應回傳 JSON
-curl -s http://127.0.0.1:8000/.well-known/openid-configuration | python3 -m json.tool
+# 從本機測試能否連到 AuthCenter（用 .env 裡的 OIDC_ISSUER_URL）
+curl -s http://auth.company.com/.well-known/openid-configuration | python3 -m json.tool
 
-# 確認 issuer 與 OIDC_ISSUER_URL 一致
+# 確認回傳的 issuer 與 .env 的 OIDC_ISSUER_URL 完全一致
 # 確認 authorization_endpoint, token_endpoint, jwks_uri 都可存取
 
 # JWKS — 應回傳公鑰
-curl -s http://127.0.0.1:8000/.well-known/jwks.json | python3 -m json.tool
+curl -s http://auth.company.com/.well-known/jwks.json | python3 -m json.tool
 ```
 
 ### 第三步：確認 OAuth2 Proxy 能連到 AuthCenter
