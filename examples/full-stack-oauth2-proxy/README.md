@@ -13,6 +13,7 @@ auth.company.com        ← AuthCenter 獨立部署（OIDC Provider）
 
 sa-help.company.com     ← 業務站台（本範例）
 ├── /oauth2/*  → OAuth2 Proxy  :4180  （認證判斷）
+├── /admin/*   → AuthCenter    :8000  （自帶認證）管理後台
 ├── /api/v1/*  → 業務 API      :8058  （需驗證）含檔案上傳 50MB
 ├── /fs/       → HFS           :8080  （需驗證）檔案伺服器 10GB
 └── /          → 前端靜態檔            （需驗證）
@@ -168,12 +169,12 @@ docker compose logs oauth2-proxy --tail 20
 docker compose logs hfs --tail 20
 
 # 各 port 是否有在監聽
-ss -tlnp | grep -E '4180|8058|8080'
+ss -tlnp | grep -E '4180|8000|8058|8080'
 # 應看到:
 #   127.0.0.1:4180  ← OAuth2 Proxy
+#   0.0.0.0:8000    ← AuthCenter（管理後台 + OIDC Provider）
 #   0.0.0.0:8058    ← 業務 API
 #   127.0.0.1:8080  ← HFS
-# （AuthCenter 在另一台機器 auth.company.com，不在這裡檢查）
 
 # Nginx 狀態
 sudo systemctl status nginx
