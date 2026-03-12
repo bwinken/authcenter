@@ -13,7 +13,6 @@ auth.company.com        ← AuthCenter 獨立部署（OIDC Provider）
 
 sa-help.company.com     ← 業務站台（本範例）
 ├── /oauth2/*  → OAuth2 Proxy  :4180  （認證判斷）
-├── /admin/*   → AuthCenter    :8000  （自帶認證）管理後台
 ├── /api/v1/*  → 業務 API      :8058  （需驗證）含檔案上傳 50MB
 ├── /fs/       → HFS           :8080  （需驗證）檔案伺服器 10GB
 └── /          → 前端靜態檔            （需驗證）
