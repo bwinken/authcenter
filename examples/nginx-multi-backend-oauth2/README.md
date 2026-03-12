@@ -100,7 +100,8 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## 注意事項
 
-- **HFS 路徑前綴**：Nginx 的 `proxy_pass http://127.0.0.1:8080/` 尾部的 `/` 會 strip 掉 `/fs/` 前綴。HFS 收到的請求路徑是 `/`，不是 `/fs/`。
+- **HFS sub-path 掛載**：Nginx 的 `proxy_pass http://127.0.0.1:8080`（不帶尾部 `/`）會將路徑原樣保留。需要在 HFS 的 VFS 中建立 `/fs` 資料夾，讓瀏覽器 URL 與 HFS 內部路徑一致，避免 HFS 前端 SPA 路由錯亂。
+- **`/fs` 無尾部斜線**：`location = /fs` 會 301 redirect 到 `/fs/`，避免請求落入 `location /` 導致登入後 redirect 到根路徑而非 `/fs/`。
 - **Cookie 共享**：`/` 和 `/fs/` 在同一個域名下，OAuth2 Proxy 的 session cookie 自動共享。登入一次就能存取所有路徑。
 - **HTTPS**：正式環境務必啟用 HTTPS，並將 `COOKIE_SECURE` 改為 `true`。
 - **HFS localhost port**：雖然 HFS 暴露了 `127.0.0.1:8080`，但僅限本機存取。外部流量必須經過 Nginx 的 auth_request 認證才能到達。

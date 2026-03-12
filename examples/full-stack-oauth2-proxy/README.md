@@ -45,7 +45,7 @@ AuthCenter 和業務站台是**兩個獨立域名**。OAuth2 Proxy 透過 OIDC �
     └── 3. 轉發到對應後端
             /admin/dashboard      → http://127.0.0.1:8058/admin/dashboard
             /api/v1/documents/xxx → http://127.0.0.1:8058/api/v1/documents/xxx
-            /fs/myfile.pdf        → http://127.0.0.1:8080/myfile.pdf  (strip /fs/)
+            /fs/myfile.pdf        → http://127.0.0.1:8080/fs/myfile.pdf  (路徑保留)
 ```
 
 ### 前端不需要處理 Token
@@ -279,10 +279,14 @@ curl -v http://127.0.0.1:8080/
 # 透過 Nginx（會要求登入）
 curl -v http://sa-help.company.com/fs/
 # 未登入 → 302 到登入頁
-# 已登入 → 200 + HFS 頁面
+# 已登入 → 200 + HFS /fs/ 資料夾頁面
 
-# 確認路徑 strip 正確
-# 瀏覽器打 /fs/some-folder/ → HFS 應顯示 /some-folder/ 的內容
+# 確認路徑保留正確
+# 瀏覽器打 /fs/some-folder/ → HFS 應顯示 /fs/some-folder/ 的內容
+
+# 確認無尾部斜線的 redirect
+curl -v http://sa-help.company.com/fs
+# 應回 301 → Location: /fs/
 ```
 
 ---
@@ -321,7 +325,7 @@ location /fs/ { proxy_pass http://...:8080/; }
 /fs/myfile   → http://...:8080/myfile        ✓
 ```
 
-業務 API 用「不帶 /」（因為後端路由本來就是 `/api/v1/...`），HFS 用「帶 /」（因為 HFS 不認識 `/fs/` 前綴）。
+業務 API 和 HFS 都用「不帶 /」（路徑原樣保留）。HFS 需要在 VFS 中建立 `/fs` 資料夾來對應 Nginx 的 `/fs/` 路徑前綴，這樣瀏覽器 URL 與 HFS 內部路徑一致，避免 HFS 前端 SPA 路由錯亂。
 
 ### Q: 如果有多個業務 API 後端怎麼辦？
 
