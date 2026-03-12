@@ -1,0 +1,94 @@
+# ============================================================
+# Docker Compose — OAuth2 Proxy (auth_request 模式) + HFS 檔案伺服器
+# ============================================================
+# 架構:
+#   Nginx (Host)
+#     ├── /oauth2/*  -> oauth2-proxy (127.0.0.1:4180) — 認證判斷
+#     ├── /          -> 前端應用 (自行部署)             — auth_request 保護
+#     └── /fs/       -> hfs (127.0.0.1:8080)          — auth_request 保護
+#
+# 說明:
+#   auth_request 模式下，Nginx 在轉發請求前先詢問 OAuth2 Proxy 使用者是否已認證。
+#   認證通過後 Nginx 直接將請求轉發至對應後端，OAuth2 Proxy 不需要處理實際流量。
+#   因此 HFS 需要暴露 localhost port 給 Nginx 存取（僅限本機，不對外）。
+#
+#   前端應用不包含在此 compose 中，請自行部署到 127.0.0.1:3000 或其他 port。
+#
+# 使用方式:
+#   1. 複製 .env.example 為 .env，填入實際值
+#   2. docker compose up -d
+#   3. 另外部署前端應用
+#   4. 設定 Nginx (參考 nginx.conf)
+# ============================================================
+
+services:
+  # ─── OAuth2 Proxy（僅負責認證）─────────────────────────────
+  # 不轉發實際流量，只回答 Nginx 的 auth_request：「這個使用者登入了嗎？」
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    container_name: sa-help-oauth2-proxy
+    restart: unless-stopped
+    ports:
+      # 僅綁定 localhost
+      - "127.0.0.1:4180:4180"
+    environment:
+      # ─── OIDC Provider 設定 ───
+      OAUTH2_PROXY_PROVIDER: "oidc"
+      OAUTH2_PROXY_OIDC_ISSUER_URL: "${OIDC_ISSUER_URL}"
+
+      # ─── Client 憑證（在 AuthCenter 的 apps.yaml 中註冊）───
+      OAUTH2_PROXY_CLIENT_ID: "${CLIENT_ID}"
+      OAUTH2_PROXY_CLIENT_SECRET: "${CLIENT_SECRET}"
+
+      # ─── Redirect URL（所有路徑共用這一個 callback）───
+      OAUTH2_PROXY_REDIRECT_URL: "${REDIRECT_URL}"
+
+      # ─── Upstream ───
+      # auth_request 模式下，OAuth2 Proxy 不需要轉發流量
+      # static://202 讓 /oauth2/auth 端點在認證通過時回傳 202
+      OAUTH2_PROXY_UPSTREAMS: "static://202"
+
+      # ─── Cookie 設定 ───
+      OAUTH2_PROXY_COOKIE_SECRET: "${COOKIE_SECRET}"
+      OAUTH2_PROXY_COOKIE_SECURE: "false"        # HTTP 環境設 false；HTTPS 改 true
+      OAUTH2_PROXY_COOKIE_SAMESITE: "lax"
+      OAUTH2_PROXY_COOKIE_NAME: "_sa_help_oauth2"
+
+      # ─── 監聽設定 ───
+      OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:4180"
+
+      # ─── 行為設定 ───
+      OAUTH2_PROXY_USER_ID_CLAIM: "sub"
+      OAUTH2_PROXY_OIDC_EMAIL_CLAIM: "sub"
+      OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: "true"
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+
+      # 將使用者資訊注入 Header（Nginx auth_request_set 可以讀取）
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "true"
+
+      # 反向代理 Headers
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_REAL_CLIENT_IP_HEADER: "X-Forwarded-For"
+
+      OAUTH2_PROXY_SCOPE: "openid"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+    # ─── 內網 DNS 解析（依需求啟用）───
+    # extra_hosts:
+    #   - "auth.company.com:192.168.1.100"
+
+  # ─── HFS 檔案伺服器 ───────────────────────────────────────
+  # 綁定 localhost port，讓 Nginx 可以直接轉發（auth_request 認證通過後）
+  hfs:
+    image: rejetto/hfs:latest
+    container_name: sa-help-hfs
+    restart: unless-stopped
+    ports:
+      # 僅綁定 localhost，由 Nginx auth_request 保護，不對外暴露
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./data/files:/home/hfs/files
+      - ./data/hfs-config:/home/hfs/.hfs
+    environment:
+      HFS_ADMIN_USER: "${HFS_ADMIN_USER:-admin}"
+      HFS_ADMIN_PASSWORD: "${HFS_ADMIN_PASSWORD:-changeme}"
