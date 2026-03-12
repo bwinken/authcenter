@@ -357,6 +357,32 @@ Nginx 預設只允許 1MB body。確認 `client_max_body_size` 有設定在正�
 
 後端服務沒跑起來，或 port 不對。用 `ss -tlnp | grep <port>` 確認。
 
+### Q: OIDC_ISSUER_URL 可以用 Docker 容器名稱（alias）嗎？
+
+**不行。** `OIDC_ISSUER_URL` 有兩個用途：
+
+1. OAuth2 Proxy 用它抓 `/.well-known/openid-configuration`（discovery）
+2. 比對 JWT 裡的 `iss` claim 是否一致
+
+AuthCenter 產出的 JWT `iss` 是根據 `AUTH_CENTER_BASE_URL` 設定的（例如 `http://auth.company.com`）。如果 `OIDC_ISSUER_URL` 設成 Docker alias（例如 `http://authcenter:8000`），issuer 比對會失敗：
+
+```
+token iss:              "http://auth.company.com"
+OIDC_ISSUER_URL:        "http://authcenter:8000"
+→ issuer mismatch → 拒絕所有 token ❌
+```
+
+**正確做法**：`OIDC_ISSUER_URL` 必須和 `AUTH_CENTER_BASE_URL` 完全一致，用對外域名，然後用 `extra_hosts` 解決容器內 DNS：
+
+```yaml
+# docker-compose.yml
+oauth2-proxy:
+  extra_hosts:
+    - "auth.company.com:192.168.1.100"   # AuthCenter 主機的實際 IP
+```
+
+如果公司內部 DNS 能正確解析 `auth.company.com`，則不需要 `extra_hosts`。
+
 ### Q: OAuth2 Proxy 啟動失敗
 
 ```bash
