@@ -38,10 +38,12 @@ AuthCenter 和業務站台是**兩個獨立域名**。OAuth2 Proxy 透過 OIDC �
     │                         → OAuth2 Proxy 用 code 換 token，設定 session cookie
     │
     ├── 2. 認證通過後，Nginx 將 access_token 注入 header：
-    │       - /api/*  → Authorization: Bearer <token>   （後端用這個驗 JWT）
-    │       - /fs/*   → X-Auth-Access-Token: <token>    （HFS 不驗 JWT，僅做紀錄）
+    │       - /admin/* → Authorization: Bearer <token>   （管理後台，驗 JWT）
+    │       - /api/*   → Authorization: Bearer <token>   （後端 API，驗 JWT）
+    │       - /fs/*    → X-Auth-Access-Token: <token>    （HFS 不驗 JWT，僅做紀錄）
     │
     └── 3. 轉發到對應後端
+            /admin/dashboard      → http://127.0.0.1:8058/admin/dashboard
             /api/v1/documents/xxx → http://127.0.0.1:8058/api/v1/documents/xxx
             /fs/myfile.pdf        → http://127.0.0.1:8080/myfile.pdf  (strip /fs/)
 ```
