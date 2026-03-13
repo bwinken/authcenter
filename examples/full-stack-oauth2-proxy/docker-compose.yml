@@ -45,6 +45,7 @@ services:
       OAUTH2_PROXY_COOKIE_SECURE: "false"          # HTTPS 環境改 true
       OAUTH2_PROXY_COOKIE_SAMESITE: "lax"
       OAUTH2_PROXY_COOKIE_NAME: "_sa_help_oauth2"
+      OAUTH2_PROXY_COOKIE_EXPIRE: "${COOKIE_EXPIRE:-12h}"  # 應與 AuthCenter token_expire_hours 一致（預設 168h = 7 天，會導致 cookie 比 token 更久）
 
       # ─── 監聽 ───
       OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:4180"
