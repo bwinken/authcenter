@@ -45,6 +45,10 @@ services:
       OAUTH2_PROXY_COOKIE_SECURE: "false"          # HTTPS 環境改 true
       OAUTH2_PROXY_COOKIE_SAMESITE: "lax"
       OAUTH2_PROXY_COOKIE_NAME: "_sa_help_oauth2"
+      # cookie-refresh：定期檢查 id_token 是否過期，過期則強制重新登入
+      # 設為 token 有效時間的一半或更短（例如 token 12h → refresh 1h）
+      # 這樣 AuthCenter 的 token_expire_hours 就能間接控制 session 壽命
+      OAUTH2_PROXY_COOKIE_REFRESH: "${COOKIE_REFRESH:-1h}"
 
       # ─── 監聽 ───
       OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:4180"
