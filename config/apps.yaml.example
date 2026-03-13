@@ -9,6 +9,7 @@
 #   allowed_orgs: list of org_id strings, [] or omit = all organizations allowed
 #   default_level: org default permission level (1 or 2), 0 = no default
 #   token_expire_hours: JWT token validity in hours, default 12
+#   app_url: app home page URL for Dashboard "前往" button (required for OAuth2 proxy apps)
 #
 # Copy this file to apps.yaml and customize:
 #   cp config/apps.yaml.example config/apps.yaml

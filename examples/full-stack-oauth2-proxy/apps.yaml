@@ -14,6 +14,7 @@ apps:
     name: "SA Help 系統"
     client_secret: "$2b$12$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     redirect_uri: "http://sa-help.company.com/oauth2/callback"
+    app_url: "http://sa-help.company.com"  # Dashboard「前往」按鈕的連結目標（OAuth2 Proxy 會自動處理認證）
     # allowed_orgs: ["IT", "RD"]    # 選填：限制特定組織
     # default_level: 1               # 選填：組織預設權限 (1=read, 2=read+write)
     # token_expire_hours: 24         # 選填：Token 有效時間
