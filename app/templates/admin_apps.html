@@ -36,6 +36,15 @@
     details summary:hover { color: var(--text-main); }
     details[open] summary { margin-bottom: 12px; }
     /* ── Org Tag Picker ── */
+    .org-picker-wrapper {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+    }
+    .org-picker-main {
+        flex: 1;
+        min-width: 0;
+    }
     .org-tag-picker {
         display: flex;
         flex-wrap: wrap;
@@ -55,6 +64,13 @@
         max-height: none;
     }
     .org-tag-picker:focus-within { border-color: var(--border-focus); }
+    .org-picker-controls {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+        padding-top: 4px;
+    }
     .org-toggle-btn {
         background: #f3f4f6;
         border: 1px solid var(--border);
@@ -92,16 +108,17 @@
     }
     .org-tag-remove:hover { color: #ef4444; }
     .org-add-select {
-        border: none;
+        border: 1px solid var(--border);
+        border-radius: 3px;
         outline: none;
-        background: transparent;
+        background: #fff;
         font-size: 11px;
         font-family: inherit;
         color: var(--text-muted);
         cursor: pointer;
-        padding: 2px 0;
-        margin-left: auto;
+        padding: 2px 4px;
     }
+    .org-add-select:focus { border-color: var(--border-focus); }
     .org-empty-hint {
         font-size: 11px;
         color: var(--text-muted);
@@ -249,34 +266,40 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <div class="org-tag-picker" id="picker_{{ aid }}">
-                                    {% for org in info.get('allowed_orgs', []) %}
-                                        <span class="org-tag" data-org="{{ org }}">
-                                            {{ org }}
-                                            <button type="button"
-                                                    class="org-tag-remove"
-                                                    onclick="removeOrg('{{ aid }}', '{{ org }}')"
-                                                    title="移除 {{ org }}">&times;</button>
-                                        </span>
-                                    {% endfor %}
-                                    <span class="org-empty-hint"
-                                          id="hint_{{ aid }}"
-                                          {% if info.get('allowed_orgs') %}style="display:none"{% endif %}>全部（留空）</span>
-                                    <select class="org-add-select"
-                                            id="addsel_{{ aid }}"
-                                            onchange="addOrg('{{ aid }}', this)">
-                                        <option value="">+ 新增</option>
-                                        {% if available_orgs %}
-                                            <option value="__ALL__">全部組織</option>
-                                        {% endif %}
-                                        {% for org in available_orgs %}
-                                            <option value="{{ org }}"
-                                                    {% if org in info.get('allowed_orgs', []) %}disabled{% endif %}>{{ org }}</option>
-                                        {% endfor %}
-                                        {% if not available_orgs %}
-                                            <option value="" disabled>（無法載入組織清單）</option>
-                                        {% endif %}
-                                    </select>
+                                <div class="org-picker-wrapper">
+                                    <div class="org-picker-main">
+                                        <div class="org-tag-picker" id="picker_{{ aid }}">
+                                            {% for org in info.get('allowed_orgs', []) %}
+                                                <span class="org-tag" data-org="{{ org }}">
+                                                    {{ org }}
+                                                    <button type="button"
+                                                            class="org-tag-remove"
+                                                            onclick="removeOrg('{{ aid }}', '{{ org }}')"
+                                                            title="移除 {{ org }}">&times;</button>
+                                                </span>
+                                            {% endfor %}
+                                            <span class="org-empty-hint"
+                                                  id="hint_{{ aid }}"
+                                                  {% if info.get('allowed_orgs') %}style="display:none"{% endif %}>全部（留空）</span>
+                                        </div>
+                                    </div>
+                                    <div class="org-picker-controls" id="controls_{{ aid }}">
+                                        <select class="org-add-select"
+                                                id="addsel_{{ aid }}"
+                                                onchange="addOrg('{{ aid }}', this)">
+                                            <option value="">+ 新增</option>
+                                            {% if available_orgs %}
+                                                <option value="__ALL__">全部組織</option>
+                                            {% endif %}
+                                            {% for org in available_orgs %}
+                                                <option value="{{ org }}"
+                                                        {% if org in info.get('allowed_orgs', []) %}disabled{% endif %}>{{ org }}</option>
+                                            {% endfor %}
+                                            {% if not available_orgs %}
+                                                <option value="" disabled>（無法載入組織清單）</option>
+                                            {% endif %}
+                                        </select>
+                                    </div>
                                 </div>
                                 <div class="org-level-warn" id="warn_{{ aid }}">⚠ 已設定允許組織但預設權限為「無」，組織內使用者將不會自動獲得存取權限，需逐人授權。</div>
                             </td>
@@ -463,7 +486,7 @@
             ' <button type="button" class="org-tag-remove"' +
             ' onclick="removeOrg(\'' + appId + '\', \'' + org + '\')"' +
             ' title="移除 ' + org + '">&times;</button>';
-        picker.insertBefore(tag, selectEl);
+        picker.appendChild(tag);
 
         current.push(org);
         hidden.value = current.join(',');
@@ -477,9 +500,10 @@
     }
     function updateOrgToggle(appId) {
         var picker = document.getElementById('picker_' + appId);
-        if (!picker) return;
+        var controls = document.getElementById('controls_' + appId);
+        if (!picker || !controls) return;
         // 移除舊的 toggle
-        var oldBtn = picker.querySelector('.org-toggle-btn');
+        var oldBtn = controls.querySelector('.org-toggle-btn');
         if (oldBtn) oldBtn.remove();
         // 如果 picker 內容溢出（超過 max-height），加上展開/收合按鈕
         if (!picker.classList.contains('expanded') && picker.scrollHeight > picker.clientHeight + 4) {
@@ -489,14 +513,14 @@
             var tags = picker.querySelectorAll('.org-tag');
             btn.textContent = '展開 (' + tags.length + ')';
             btn.onclick = function() { toggleOrgPicker(appId); };
-            picker.appendChild(btn);
+            controls.appendChild(btn);
         } else if (picker.classList.contains('expanded')) {
             var btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'org-toggle-btn';
             btn.textContent = '收合';
             btn.onclick = function() { toggleOrgPicker(appId); };
-            picker.appendChild(btn);
+            controls.appendChild(btn);
         }
     }
     function toggleOrgPicker(appId) {
