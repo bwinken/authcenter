@@ -39,7 +39,7 @@ MSSQL (IT Master DB) is **read-only** — queries employee records (`nt_account`
 
 ### App Registry
 
-Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` caches by file mtime and hot-reloads on change. `save_registered_apps()` writes back to YAML (used by admin CRUD). Each app has: `app_id`, bcrypt-hashed `client_secret`, `redirect_uri`, `name`, optional `allowed_orgs`.
+Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` caches by file mtime and hot-reloads on change. `save_registered_apps()` writes back to YAML (used by admin CRUD). Each app has: `app_id`, bcrypt-hashed `client_secret`, `redirect_uri`, `name`, optional `allowed_orgs`, optional `app_url` (home page URL for Dashboard "前往" button — required for OAuth2 proxy apps since `/auth/login` redirect lacks the `state` param that OAuth2 proxy needs for CSRF validation).
 
 ### Authentication Flow
 
@@ -47,7 +47,7 @@ Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` 
 
 ### OIDC Provider
 
-Standard OIDC endpoints in `app/oidc/` for OAuth2 proxy integration. Discovery at `/.well-known/openid-configuration`, JWKS at `/.well-known/jwks.json`, authorize at `/oidc/authorize`, token at `/oidc/token` (returns `access_token` + `id_token`), userinfo at `/oidc/userinfo`. ID token uses `AUTH_CENTER_BASE_URL` as `iss` (vs `"auth-center"` for access tokens). Auth codes store `nonce` for OIDC replay protection. Supports `client_secret_post` and `client_secret_basic`.
+Standard OIDC endpoints in `app/oidc/` for OAuth2 proxy integration. Discovery at `/.well-known/openid-configuration`, JWKS at `/.well-known/jwks.json`, authorize at `/oidc/authorize`, token at `/oidc/token` (returns `access_token` + `id_token`), userinfo at `/oidc/userinfo`. ID token uses `AUTH_CENTER_BASE_URL` as `iss` (vs `"auth-center"` for access tokens). Auth codes store `nonce` for OIDC replay protection. Supports `client_secret_post` and `client_secret_basic`. Token lifetime controlled by per-app `token_expire_hours`; OAuth2 proxy deployments should set `OAUTH2_PROXY_COOKIE_REFRESH` (e.g. `1h`) so the proxy periodically checks the id_token `exp` claim — when the JWT expires, re-authentication is forced without needing to manually sync `cookie-expire`.
 
 ### Permission Model (Per-User-Per-App Level)
 

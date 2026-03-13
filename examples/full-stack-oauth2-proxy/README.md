@@ -80,7 +80,9 @@ python -c "from passlib.hash import bcrypt; print(bcrypt.using(rounds=12).hash('
 
 將 `apps.yaml` 的內容加入 AuthCenter 的 `config/apps.yaml`，替換 `client_secret` 為上面產生的 hash。
 
-**重要**: `redirect_uri` 必須指向 `http://sa-help.company.com/oauth2/callback`（OAuth2 Proxy 的 callback，不是後端的）。
+**重要**:
+- `redirect_uri` 必須指向 `http://sa-help.company.com/oauth2/callback`（OAuth2 Proxy 的 callback，不是後端的）。
+- `app_url` 設定為受保護網站的首頁（例如 `http://sa-help.company.com`），讓 AuthCenter Dashboard 的「前往」按鈕能正確導向。
 
 ### Step 2: 設定環境變數
 
@@ -100,6 +102,7 @@ openssl rand -base64 32 | head -c 32
 - `CLIENT_SECRET` — 明文 secret（不是 bcrypt hash）
 - `REDIRECT_URL` — `http://sa-help.company.com/oauth2/callback`
 - `COOKIE_SECRET` — 上面產生的隨機字串
+- `COOKIE_REFRESH` — Cookie 重新驗證間隔（預設 `1h`），讓 token 過期後自動強制重新登入
 
 ### Step 3: 啟動 OAuth2 Proxy + HFS
 
@@ -349,9 +352,32 @@ location /api/v1/users/ {
 
 Nginx 的 location 匹配是最長前綴優先，`/api/v1/documents/` 會優先於 `/api/`。
 
+### Q: Token 過期時間怎麼控制？
+
+AuthCenter 管理後台設定的 `token_expire_hours`（例如 12 小時）控制 JWT 的實際壽命。但 OAuth2 Proxy 的 cookie 預設存活 168 小時（7 天），會比 token 更久。
+
+解法：設定 `OAUTH2_PROXY_COOKIE_REFRESH`（例如 `1h`），讓 OAuth2 Proxy 每小時檢查 id_token 的 `exp` claim。當 JWT 過期後，下一次檢查就會強制重新登入。這樣只要在 AuthCenter 後台調整 `token_expire_hours`，不需要在 client 端同步修改任何設定。
+
 ### Q: Cookie 過期後會怎樣？
 
-OAuth2 Proxy 的 session cookie 過期 → auth_request 回 401 → Nginx 導向登入頁 → 重新走 OIDC flow → 自動拿到新 cookie → 回到原本頁面。使用者只需要重新登入一次。
+OAuth2 Proxy 的 session cookie 過期（或 token refresh 檢查發現 JWT 已過期）→ auth_request 回 401 → Nginx 導向登入頁 → 重新走 OIDC flow → 自動拿到新 cookie → 回到原本頁面。使用者只需要重新登入一次。
+
+### Q: AuthCenter Dashboard 的「前往」按鈕怎麼用？
+
+在 AuthCenter 的 apps.yaml 中設定 `app_url`（應用程式首頁網址）：
+
+```yaml
+- app_id: "sa_help"
+  app_url: "http://sa-help.company.com"  # Dashboard「前往」按鈕的連結目標
+  redirect_uri: "http://sa-help.company.com/oauth2/callback"
+  # ...
+```
+
+Dashboard 會直接連到 `app_url`，OAuth2 Proxy 攔截後自動走 OIDC 流程。
+
+**為什麼不能用 `redirect_uri`？** 因為 Dashboard 的「前往」走的是 `/auth/login`（一般 auth flow），redirect 到 `/oauth2/callback?code=xxx` 時**缺少 `state` 參數**，OAuth2 Proxy 會因為 CSRF 驗證失敗而拒絕。設定 `app_url` 讓 OAuth2 Proxy 自己發起 OIDC flow，就能正確產生和驗證 `state`。
+
+也可以透過 Admin 後台（Super Admin）在 App 設定頁面編輯 App URL。
 
 ### Q: 413 Request Entity Too Large
 
