@@ -47,7 +47,7 @@ Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` 
 
 ### OIDC Provider
 
-Standard OIDC endpoints in `app/oidc/` for OAuth2 proxy integration. Discovery at `/.well-known/openid-configuration`, JWKS at `/.well-known/jwks.json`, authorize at `/oidc/authorize`, token at `/oidc/token` (returns `access_token` + `id_token`), userinfo at `/oidc/userinfo`. ID token uses `AUTH_CENTER_BASE_URL` as `iss` (vs `"auth-center"` for access tokens). Auth codes store `nonce` for OIDC replay protection. Supports `client_secret_post` and `client_secret_basic`. Token lifetime controlled by per-app `token_expire_hours`; OAuth2 proxy deployments should set `OAUTH2_PROXY_COOKIE_REFRESH` (e.g. `1h`) so the proxy periodically checks the id_token `exp` claim — when the JWT expires, re-authentication is forced without needing to manually sync `cookie-expire`.
+Standard OIDC endpoints in `app/oidc/` for OAuth2 proxy integration. Discovery at `/.well-known/openid-configuration`, JWKS at `/.well-known/jwks.json`, authorize at `/oidc/authorize`, token at `/oidc/token` (returns `access_token` + `id_token`), userinfo at `/oidc/userinfo`. All JWTs (access_token + id_token) use `AUTH_CENTER_BASE_URL` as `iss` and include `kid` header for JWKS key matching. Auth codes store `nonce` for OIDC replay protection. Supports `client_secret_post` and `client_secret_basic`. Token lifetime controlled by per-app `token_expire_hours`; OAuth2 proxy deployments should set `OAUTH2_PROXY_COOKIE_REFRESH` (e.g. `1h`) so the proxy periodically checks the id_token `exp` claim — when the JWT expires, re-authentication is forced without needing to manually sync `cookie-expire`.
 
 ### Permission Model (Per-User-Per-App Level)
 

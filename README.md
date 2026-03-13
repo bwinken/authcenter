@@ -1150,7 +1150,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 
 ```json
 {
-  "iss": "auth-center",
+  "iss": "https://your-auth-center.com",
   "sub": "kane.beh",
   "aud": "ai_chat_app",
   "iat": 1709000000,
@@ -1160,9 +1160,11 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 }
 ```
 
+JWT header 包含 `kid` 以對應 JWKS 中的公鑰：`{"alg": "RS256", "typ": "JWT", "kid": "..."}`
+
 | 欄位 | 說明 |
 |------|------|
-| `iss` | 簽發者（固定為 `auth-center`） |
+| `iss` | 簽發者（`AUTH_CENTER_BASE_URL`，與 OIDC discovery 一致） |
 | `sub` | 使用者名稱（employee_name，如 kane.beh） |
 | `aud` | 此 Token 預定存取的 App ID，App 端必須驗證此欄位 |
 | `iat` | Token 簽發時間 (Unix timestamp) |
@@ -1202,7 +1204,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `preferred_username` | 使用者名稱 |
 | `org_id` | 組織代碼 |
 
-> **注意**：`id_token` 的 `iss` 使用 `AUTH_CENTER_BASE_URL`（OIDC 規範），而一般 `access_token` 的 `iss` 仍為 `"auth-center"`（向後相容）。JWT header 包含 `kid` 以對應 JWKS 中的公鑰。
+> `access_token` 和 `id_token` 的 `iss` 都使用 `AUTH_CENTER_BASE_URL`，與 OIDC discovery document 一致。所有 JWT header 都包含 `kid` 以對應 JWKS 中的公鑰。
 
 ---
 
@@ -1402,7 +1404,7 @@ sequenceDiagram
     C->>S: 消耗 auth code（原子 DELETE RETURNING）
     C->>M: 查詢員工資料以簽發 Token
     M-->>C: staff info
-    C->>C: 簽發 access_token（iss=auth-center）<br/>+ id_token（iss=AUTH_CENTER_BASE_URL, 含 nonce）
+    C->>C: 簽發 access_token + id_token<br/>（iss=AUTH_CENTER_BASE_URL, 含 kid header）
 
     C-->>P: 12. 回傳 {access_token, id_token, token_type, expires_in}
 
@@ -1624,7 +1626,7 @@ flowchart TB
 | 授權端點 | `GET /auth/login` | `GET /oidc/authorize` |
 | Token 端點 | `POST /auth/token`（JSON body） | `POST /oidc/token`（form / JSON） |
 | 回傳內容 | `access_token` | `access_token` + `id_token` |
-| Token `iss` | `"auth-center"` | `AUTH_CENTER_BASE_URL` |
+| Token `iss` | `AUTH_CENTER_BASE_URL` | `AUTH_CENTER_BASE_URL` |
 | 參數格式 | `app_id` + `redirect_uri` | 標準 OAuth2（`client_id`, `response_type`, `state`, `nonce`） |
 | CSRF 保護 | state 不需要（form-based） | `state` 參數透傳（Proxy 自行驗證） |
 | Replay 防護 | 不需要 | `nonce` 寫入 auth code + id_token |
@@ -1636,7 +1638,7 @@ flowchart TB
 | 機制 | 說明 |
 |------|------|
 | **RS256 非對稱簽名** | 私鑰僅 Auth Center 持有，App 端只需公鑰驗證 |
-| **JWT `iss` 驗證** | 簽發時寫入 `iss: "auth-center"`，驗證時檢查 issuer 是否匹配 |
+| **JWT `iss` 驗證** | 簽發時寫入 `iss: AUTH_CENTER_BASE_URL`，驗證時檢查 issuer 是否匹配 |
 | **CSRF 保護** | Double Submit Cookie 模式，保護敏感操作路由（改密碼、Admin 管理操作）；登入、註冊等表單已豁免（本身需帳密或一次性 token 保護） |
 | **CORS 限制** | `allow_origins` 自動從 `apps.yaml` 的 `redirect_uri` 提取，不再全開 `*` |
 | **密碼強度政策** | 至少 8 字元、含大小寫英文字母及數字、不可與使用者名稱相同 |

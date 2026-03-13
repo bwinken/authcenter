@@ -471,7 +471,7 @@ async def auth_callback(request: Request, code: str = Query(...)):
 def _decode_jwt(token: str) -> dict | None:
     """解碼並驗證 JWT，失敗回傳 None。"""
     try:
-        return jwt.decode(token, _load_public_key(), algorithms=[ALGORITHM], audience=APP_ID, issuer="auth-center")
+        return jwt.decode(token, _load_public_key(), algorithms=[ALGORITHM], audience=APP_ID, issuer=AUTH_CENTER_BASE_URL)
     except jwt.PyJWTError:
         return None
 
@@ -500,7 +500,7 @@ def get_current_user(
             _load_public_key(),
             algorithms=[ALGORITHM],
             audience=APP_ID,
-            issuer="auth-center",
+            issuer=AUTH_CENTER_BASE_URL,
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(

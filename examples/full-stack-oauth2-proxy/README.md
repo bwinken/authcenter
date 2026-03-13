@@ -63,6 +63,133 @@ await fetch('/api/v1/documents/upload', { method: 'POST', body: formData });
 
 OAuth2 Proxy 的 session cookie 隨請求自動送出 → Nginx auth_request 驗證 → 注入 token → 後端收到 `Authorization: Bearer <token>`。
 
+## 認證流程詳解
+
+### 1. 首次訪問（未登入）
+
+使用者第一次訪問受保護頁面時，會經歷完整的 OIDC 登入流程：
+
+```mermaid
+sequenceDiagram
+    participant B as 瀏覽器
+    participant N as Nginx
+    participant P as OAuth2 Proxy
+    participant A as AuthCenter
+
+    B->>N: GET /api/v1/documents
+    Note over N: location /api/ → auth_request
+
+    N->>P: GET /oauth2/auth（內部子請求）
+    Note over P: 沒有 session cookie → 未登入
+    P-->>N: 401 Unauthorized
+
+    N-->>B: 302 → /oauth2/sign_in?rd=/api/v1/documents
+    B->>P: GET /oauth2/sign_in?rd=/api/v1/documents
+
+    Note over P: 產生 state + nonce
+    P-->>B: 302 → AuthCenter /oidc/authorize?<br/>response_type=code&client_id=sa_help<br/>&redirect_uri=.../oauth2/callback<br/>&state=xxx&nonce=yyy&scope=openid
+
+    B->>A: GET /oidc/authorize?...
+    A-->>B: 200 登入頁面（HTML form）
+
+    B->>A: POST /oidc/authorize（帳號 + 密碼）
+    Note over A: 驗證帳密 → 檢查 App 權限<br/>→ 產生 auth code（含 nonce）
+    A-->>B: 303 → /oauth2/callback?code=abc123&state=xxx
+
+    B->>P: GET /oauth2/callback?code=abc123&state=xxx
+    Note over P: ① 驗證 state 一致（CSRF 防護）
+
+    P->>A: POST /oidc/token（server-to-server）
+    Note over P,A: grant_type=authorization_code<br/>code=abc123<br/>client_id=sa_help<br/>client_secret=xxx
+
+    Note over A: 消耗 auth code（原子 DELETE）<br/>簽發 access_token + id_token
+    A-->>P: 200 {access_token, id_token, expires_in}
+
+    Note over P: ② 用 JWKS 驗證 id_token 簽章<br/>③ 驗證 iss / aud / exp / nonce<br/>④ 將 access_token + id_token<br/>　 用 COOKIE_SECRET 加密<br/>　 存入 session cookie
+
+    P-->>B: 302 → /api/v1/documents<br/>Set-Cookie: _sa_help_oauth2=加密blob
+```
+
+### 2. 後續請求（已登入）
+
+登入後的每次請求，OAuth2 Proxy 只需解密 cookie，不需要再連 AuthCenter：
+
+```mermaid
+sequenceDiagram
+    participant B as 瀏覽器
+    participant N as Nginx
+    participant P as OAuth2 Proxy
+    participant API as 業務 API :8058
+
+    B->>N: GET /api/v1/documents<br/>Cookie: _sa_help_oauth2=加密blob
+
+    Note over N: location /api/ → auth_request
+    N->>P: GET /oauth2/auth<br/>Cookie: _sa_help_oauth2=加密blob
+
+    Note over P: 用 COOKIE_SECRET 解密 cookie<br/>取出 session（含 access_token）<br/>檢查 id_token exp → 未過期 ✓
+    P-->>N: 202 Accepted<br/>X-Auth-Request-Access-Token: eyJ...
+
+    Note over N: auth_request_set $auth_token<br/>= X-Auth-Request-Access-Token 的值<br/>注入 Authorization header
+    N->>API: GET /api/v1/documents<br/>Authorization: Bearer eyJ...
+
+    Note over API: jwt.decode(token, PUBLIC_KEY,<br/>audience="sa_help",<br/>issuer="http://auth.company.com")<br/>→ 取出 sub, scopes, org_id
+    API-->>N: 200 {data: [...]}
+    N-->>B: 200 {data: [...]}
+```
+
+> **重點**：後續請求完全不經過 AuthCenter。OAuth2 Proxy 只做 cookie 解密 + 過期檢查，效能開銷極低。
+
+### 3. Token 過期與自動重新登入
+
+```mermaid
+sequenceDiagram
+    participant B as 瀏覽器
+    participant N as Nginx
+    participant P as OAuth2 Proxy
+    participant A as AuthCenter
+
+    Note over B: 使用者持續使用中...<br/>（token 已過期，但 cookie 還在）
+
+    B->>N: GET /api/v1/documents<br/>Cookie: _sa_help_oauth2=加密blob
+
+    N->>P: GET /oauth2/auth<br/>Cookie: _sa_help_oauth2=加密blob
+
+    Note over P: 解密 cookie<br/>檢查 id_token exp<br/>→ 已過期（COOKIE_REFRESH 觸發）
+    P-->>N: 401 Unauthorized
+
+    N-->>B: 302 → /oauth2/sign_in?rd=/api/v1/documents
+
+    Note over B,A: （重新走一次登入流程，同「首次訪問」）
+    B->>A: → AuthCenter 登入頁
+    A-->>B: → 登入成功，拿到新 token
+    B->>P: → callback，設新 cookie
+    P-->>B: 302 → /api/v1/documents（回到原本頁面）
+```
+
+> `COOKIE_REFRESH: 1h` 表示 OAuth2 Proxy 每小時檢查一次 id_token 的 `exp`。<br/>
+> AuthCenter 管理後台設定的 `token_expire_hours`（例如 12h）控制 token 實際壽命。<br/>
+> 兩者搭配：token 過期後，最多 1 小時內使用者會被要求重新登入。
+
+### 4. Token 內容對照
+
+兩個 token 同時簽發，用途不同：
+
+```mermaid
+graph LR
+    subgraph "AuthCenter /oidc/token 回傳"
+        AT["<b>access_token</b><br/>iss: http://auth.company.com<br/>sub: kane.beh<br/>aud: sa_help<br/>scopes: [read, write]<br/>org_id: IT<br/>kid: ✓"]
+        IT["<b>id_token</b><br/>iss: http://auth.company.com<br/>sub: kane.beh<br/>aud: sa_help<br/>nonce: yyy<br/>auth_time: 1710000000<br/>kid: ✓"]
+    end
+
+    subgraph "誰用"
+        API["後端 API<br/>jwt.decode() 驗權限"]
+        OP["OAuth2 Proxy<br/>驗身份 + 管 session"]
+    end
+
+    AT -->|"Nginx 注入<br/>Authorization: Bearer"| API
+    IT -->|"加密存進<br/>session cookie"| OP
+```
+
 ## 部署步驟
 
 ### 前置條件
@@ -305,16 +432,19 @@ curl -v http://sa-help.company.com/fs
 ```python
 import jwt
 
+OIDC_ISSUER_URL = "http://auth.company.com"  # 與 AuthCenter 的 AUTH_CENTER_BASE_URL 一致
+
 def get_current_user(request: Request):
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing token")
     token = auth.removeprefix("Bearer ")
-    payload = jwt.decode(token, PUBLIC_KEY, algorithms=["RS256"], audience="sa_help")
+    payload = jwt.decode(token, PUBLIC_KEY, algorithms=["RS256"],
+                         audience="sa_help", issuer=OIDC_ISSUER_URL)
     return payload
 ```
 
-公鑰可從 AuthCenter 的 `/.well-known/jwks.json` 取得。
+`iss` 值等於 AuthCenter 的 `AUTH_CENTER_BASE_URL`。公鑰可從 `{iss}/.well-known/jwks.json` 取得。
 
 ### Q: proxy_pass 結尾有沒有 `/` 的差異？
 
