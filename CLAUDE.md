@@ -39,7 +39,7 @@ MSSQL (IT Master DB) is **read-only** — queries employee records (`nt_account`
 
 ### App Registry
 
-Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` caches by file mtime and hot-reloads on change. `save_registered_apps()` writes back to YAML (used by admin CRUD). Each app has: `app_id`, bcrypt-hashed `client_secret`, `redirect_uri`, `name`, optional `allowed_orgs`, optional `app_url` (home page URL for Dashboard "前往" button — required for OAuth2 proxy apps since `/auth/login` redirect lacks the `state` param that OAuth2 proxy needs for CSRF validation).
+Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` caches by file mtime and hot-reloads on change. `save_registered_apps()` writes back to YAML (used by admin CRUD). Each app has: `app_id`, bcrypt-hashed `client_secret`, `redirect_uri`, `name`, optional `allowed_orgs`, optional `default_level` (org default permission 1–2), optional `token_expire_hours` (JWT validity, default 12), optional `app_url` (home page URL for Dashboard "前往" button — required for OAuth2 proxy apps since `/auth/login` redirect lacks the `state` param that OAuth2 proxy needs for CSRF validation).
 
 ### Authentication Flow
 

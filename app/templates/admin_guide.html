@@ -93,6 +93,7 @@
             <li><strong>允許組織</strong>：指定哪些組織的員工可以存取此 App，留空表示不限制</li>
             <li><strong>預設權限</strong>：當允許組織非空時，組織內的員工自動擁有此預設權限等級（無需逐一授權）。預設權限僅支援 Level 1（Read）和 Level 2（Read+Write），Level 3（Admin）必須逐人手動授權</li>
             <li><strong>Token 有效時間</strong>：設定使用者登入後取得的 JWT Token 有效小時數（1-720 小時，預設 12）</li>
+            <li><strong>App URL</strong>：應用程式首頁網址（選填），設定後 Dashboard「前往」按鈕會直接連到此網址。透過 OAuth2 Proxy 保護的 App 必須設定此欄位，否則「前往」按鈕會因缺少 CSRF state 而無法正常運作</li>
             <li><strong>刪除 App</strong>：刪除後該 App 的 OAuth 流程將失效，但已存在的使用者權限記錄不會自動刪除</li>
         </ul>
         <div class="guide-warn">新增 App 後產生的 Client Secret 僅顯示一次，請務必複製後安全保管。如果遺失，需要刪除 App 後重新建立。</div>
