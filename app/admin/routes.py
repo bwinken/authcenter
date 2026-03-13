@@ -452,6 +452,7 @@ async def apps_page(
 async def update_app(
     request: Request,
     app_id: str = Form(...),
+    app_name: str = Form(default=""),
     redirect_uri: str = Form(default=""),
     app_url: str = Form(default=""),
     allowed_orgs: str = Form(default=""),
@@ -488,6 +489,13 @@ async def update_app(
     # Parse allowed_orgs (comma-separated)
     orgs = [d.strip() for d in allowed_orgs.split(",") if d.strip()] if allowed_orgs.strip() else []
 
+    # Super Admin 可修改 App 名稱
+    old_name = apps[app_id].get("name", app_id)
+    name_changed = ""
+    if admin.get("is_super") and app_name.strip() and app_name.strip() != old_name:
+        apps[app_id]["name"] = app_name.strip()
+        name_changed = f", name: {old_name}→{app_name.strip()}"
+
     old_orgs = apps[app_id].get("allowed_orgs", [])
     old_default_level = apps[app_id].get("default_level", 0)
     old_token_hours = apps[app_id].get("token_expire_hours", 12)
@@ -521,7 +529,7 @@ async def update_app(
 
     await _log_action(
         sqlite_session, admin["sub"], "update_app", target=app_id,
-        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}, token_expire_hours: {old_token_hours}→{token_expire_hours}{redirect_uri_changed}{app_url_changed}",
+        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}, token_expire_hours: {old_token_hours}→{token_expire_hours}{name_changed}{redirect_uri_changed}{app_url_changed}",
 
     )
 

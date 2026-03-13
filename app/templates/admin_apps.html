@@ -42,12 +42,31 @@
         align-items: center;
         gap: 4px;
         min-height: 32px;
+        max-height: 68px;
+        overflow: hidden;
         padding: 3px 6px;
         border: 1px solid var(--border);
         border-radius: 4px;
         background: #fff;
+        position: relative;
+        transition: max-height 0.2s ease;
+    }
+    .org-tag-picker.expanded {
+        max-height: none;
     }
     .org-tag-picker:focus-within { border-color: var(--border-focus); }
+    .org-toggle-btn {
+        background: #f3f4f6;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 1px 6px;
+        white-space: nowrap;
+    }
+    .org-toggle-btn:hover { background: #e5e7eb; color: var(--text-main); }
     .org-tag {
         display: inline-flex;
         align-items: center;
@@ -219,7 +238,16 @@
                                        id="hidden_orgs_{{ aid }}"
                                        value="{{ info.get('allowed_orgs', []) | join(',') }}">
                             </td>
-                            <td>{{ info.get('name', aid) }}</td>
+                            <td>
+                                {% if is_super %}
+                                    <input form="form_{{ aid }}" type="text" name="app_name"
+                                           value="{{ info.get('name', aid) }}"
+                                           style="width: 100%; min-width: 80px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px;"
+                                           title="App 顯示名稱">
+                                {% else %}
+                                    {{ info.get('name', aid) }}
+                                {% endif %}
+                            </td>
                             <td>
                                 <div class="org-tag-picker" id="picker_{{ aid }}">
                                     {% for org in info.get('allowed_orgs', []) %}
@@ -382,6 +410,7 @@
 
         if (updated.length === 0) hint.style.display = '';
         checkOrgLevelWarn(appId);
+        updateOrgToggle(appId);
     }
 
     function checkOrgLevelWarn(appId) {
@@ -444,12 +473,44 @@
 
         hint.style.display = 'none';
         checkOrgLevelWarn(appId);
+        updateOrgToggle(appId);
+    }
+    function updateOrgToggle(appId) {
+        var picker = document.getElementById('picker_' + appId);
+        if (!picker) return;
+        // 移除舊的 toggle
+        var oldBtn = picker.querySelector('.org-toggle-btn');
+        if (oldBtn) oldBtn.remove();
+        // 如果 picker 內容溢出（超過 max-height），加上展開/收合按鈕
+        if (!picker.classList.contains('expanded') && picker.scrollHeight > picker.clientHeight + 4) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'org-toggle-btn';
+            var tags = picker.querySelectorAll('.org-tag');
+            btn.textContent = '展開 (' + tags.length + ')';
+            btn.onclick = function() { toggleOrgPicker(appId); };
+            picker.appendChild(btn);
+        } else if (picker.classList.contains('expanded')) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'org-toggle-btn';
+            btn.textContent = '收合';
+            btn.onclick = function() { toggleOrgPicker(appId); };
+            picker.appendChild(btn);
+        }
+    }
+    function toggleOrgPicker(appId) {
+        var picker = document.getElementById('picker_' + appId);
+        if (!picker) return;
+        picker.classList.toggle('expanded');
+        updateOrgToggle(appId);
     }
     // 頁面載入時檢查 & 監聽 default_level 變更
     document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('form[id^="form_"]').forEach(function(form) {
             var appId = form.querySelector('input[name="app_id"]').value;
             checkOrgLevelWarn(appId);
+            updateOrgToggle(appId);
             var levelSel = document.querySelector('select[form="form_' + appId + '"][name="default_level"]');
             if (levelSel) {
                 levelSel.addEventListener('change', function() {
