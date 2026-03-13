@@ -414,6 +414,7 @@ async def get_user_accessible_apps(
             "app_id": app_id,
             "name": app_info.get("name", app_id),
             "redirect_uri": app_info.get("redirect_uri", ""),
+            "app_url": app_info.get("app_url", ""),
             "level": effective_level,
             "scopes": level_to_scopes(effective_level),
         })

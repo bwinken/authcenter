@@ -88,7 +88,9 @@
                                 {% for scope in app.scopes %}<span class="scope-tag">{{ scope }}</span>{% endfor %}
                             </div>
                         </div>
-                        {% if app.redirect_uri %}
+                        {% if app.app_url %}
+                            <a href="{{ app.app_url }}" class="app-link" target="_blank">前往</a>
+                        {% elif app.redirect_uri %}
                             <a href="/auth/login?app_id={{ app.app_id }}&redirect_uri={{ app.redirect_uri }}"
                                class="app-link">前往</a>
                         {% endif %}
@@ -120,7 +122,10 @@
                         html += '<span class="scope-tag">' + escapeHtml(app.scopes[j]) + '</span>';
                     }
                     html += '</div></div>';
-                    if (app.redirect_uri) {
+                    if (app.app_url) {
+                        html += '<a href="' + escapeHtml(app.app_url) +
+                                '" class="app-link" target="_blank">前往</a>';
+                    } else if (app.redirect_uri) {
                         html += '<a href="/auth/login?app_id=' + encodeURIComponent(app.app_id) +
                                 '&redirect_uri=' + encodeURIComponent(app.redirect_uri) +
                                 '" class="app-link">前往</a>';

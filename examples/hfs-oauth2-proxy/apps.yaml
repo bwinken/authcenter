@@ -27,6 +27,9 @@ apps:
     # OAuth2 Proxy 的 callback URL（必須完全匹配，含 protocol + domain + path）
     redirect_uri: "https://files.company.com/oauth2/callback"
 
+    # Dashboard「前往」按鈕的連結目標（OAuth2 Proxy 會自動處理認證）
+    app_url: "https://files.company.com"
+
     # ─── 存取規則（可選）───
 
     # 允許的組織（空陣列 = 不限組織）

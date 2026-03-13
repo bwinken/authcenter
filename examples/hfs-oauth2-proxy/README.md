@@ -80,6 +80,7 @@ bash setup.sh
   name: "內部檔案伺服器"
   client_secret: "<bcrypt hash>"       # 見下方產生方式
   redirect_uri: "https://files.company.com/oauth2/callback"
+  app_url: "https://files.company.com" # Dashboard「前往」按鈕連結目標
   allowed_orgs: []
   default_level: 0
   token_expire_hours: 24
@@ -106,6 +107,7 @@ cp .env.example .env
 | `CLIENT_SECRET` | 明文 Client Secret（AuthCenter 端存 bcrypt hash） |
 | `REDIRECT_URL` | OAuth2 callback URL（如 `https://files.company.com/oauth2/callback`） |
 | `COOKIE_SECRET` | 用 `openssl rand -base64 32` 產生 |
+| `COOKIE_REFRESH` | Cookie 重新驗證間隔（預設 `1h`），token 過期後自動強制重新登入 |
 | `OIDC_EXTRA_HOST` | 內網 DNS 對應，格式 `hostname:ip`（不需要則留空） |
 | `HFS_ADMIN_USER` | HFS 管理員帳號（預設 `admin`） |
 | `HFS_ADMIN_PASSWORD` | HFS 管理員密碼 |

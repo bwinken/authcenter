@@ -453,6 +453,7 @@ async def update_app(
     request: Request,
     app_id: str = Form(...),
     redirect_uri: str = Form(default=""),
+    app_url: str = Form(default=""),
     allowed_orgs: str = Form(default=""),
     default_level: int = Form(default=0),
     token_expire_hours: int = Form(default=12),
@@ -462,7 +463,7 @@ async def update_app(
 ):
     """更新 App 的存取規則（Super Admin 或該 App 的 App Admin）。
 
-    可修改 allowed_orgs、default_level、token_expire_hours。
+    可修改 allowed_orgs、default_level、token_expire_hours、app_url。
     變更會寫回 config/apps.yaml 並記錄至 audit log。
     App Admin 僅能修改自己管理的 App，且不能刪除 App。
     """
@@ -497,18 +498,30 @@ async def update_app(
     apps[app_id]["default_level"] = default_level
     apps[app_id]["token_expire_hours"] = token_expire_hours
 
-    # Super Admin 可修改 redirect_uri
+    # Super Admin 可修改 redirect_uri 和 app_url
     old_redirect_uri = apps[app_id].get("redirect_uri", "")
     redirect_uri_changed = ""
     if admin.get("is_super") and redirect_uri.strip() and redirect_uri.strip() != old_redirect_uri:
         apps[app_id]["redirect_uri"] = redirect_uri.strip()
         redirect_uri_changed = f", redirect_uri: {old_redirect_uri}→{redirect_uri.strip()}"
 
+    # app_url：應用程式首頁網址（Super Admin 可修改）
+    old_app_url = apps[app_id].get("app_url", "")
+    app_url_changed = ""
+    if admin.get("is_super"):
+        new_app_url = app_url.strip()
+        if new_app_url != old_app_url:
+            if new_app_url:
+                apps[app_id]["app_url"] = new_app_url
+            else:
+                apps[app_id].pop("app_url", None)
+            app_url_changed = f", app_url: {old_app_url or '(空)'}→{new_app_url or '(空)'}"
+
     save_registered_apps(apps)
 
     await _log_action(
         sqlite_session, admin["sub"], "update_app", target=app_id,
-        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}, token_expire_hours: {old_token_hours}→{token_expire_hours}{redirect_uri_changed}",
+        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}, token_expire_hours: {old_token_hours}→{token_expire_hours}{redirect_uri_changed}{app_url_changed}",
 
     )
 
