@@ -1,7 +1,59 @@
 {% extends "base.html" %}
 {% block title %}登入 - AuthCenter{% endblock %}
 {% block content %}
-    <p class="subtitle" style="margin-bottom: 24px;">登入以存取 {{ app_name }}</p>
+    <style>
+        .app-name-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(135deg, #f0fdf4 0%, #eff6ff 100%);
+            border: 1px solid #bbf7d0;
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 24px;
+        }
+        .app-name-icon {
+            flex-shrink: 0;
+            width: 42px;
+            height: 42px;
+            background: #fff;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .app-name-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .app-name-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        .app-name-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    </style>
+    <div class="app-name-card">
+        <div class="app-name-icon">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="var(--primary)">
+                <path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/>
+            </svg>
+        </div>
+        <div class="app-name-text">
+            <span class="app-name-label">登入以存取</span>
+            <span class="app-name-value">{{ app_name }}</span>
+        </div>
+    </div>
     {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
     {% if not fatal %}
     <form method="POST" action="{{ form_action|default('/auth/login') }}">
