@@ -1,5 +1,15 @@
 {% extends "admin_base.html" %}
 {% block title %}Dashboard - AuthCenter Admin{% endblock %}
+{% block extra_style %}
+    <style>
+    .org-badge-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        max-width: 280px;
+    }
+    </style>
+{% endblock %}
 {% block content %}
     <div class="page-header">
         <h1>Dashboard</h1>
@@ -106,7 +116,9 @@
                                 <td>
                                     {% set orgs = info.get('allowed_orgs', []) %}
                                     {% if orgs %}
-                                        {% for d in orgs %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                                        <div class="org-badge-group">
+                                            {% for d in orgs %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                                        </div>
                                     {% else %}
                                         <span style="color: var(--text-muted); font-size: 12px;">全部</span>
                                     {% endif %}
@@ -148,7 +160,9 @@
                                 <td>
                                     {% set orgs = info.get('allowed_orgs', []) %}
                                     {% if orgs %}
-                                        {% for d in orgs %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                                        <div class="org-badge-group">
+                                            {% for d in orgs %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                                        </div>
                                     {% else %}
                                         <span style="color: var(--text-muted); font-size: 12px;">全部</span>
                                     {% endif %}
