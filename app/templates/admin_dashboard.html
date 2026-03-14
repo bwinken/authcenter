@@ -1,5 +1,15 @@
 {% extends "admin_base.html" %}
 {% block title %}Dashboard - AuthCenter Admin{% endblock %}
+{% block extra_style %}
+    <style>
+    .org-badge-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        max-width: 280px;
+    }
+    </style>
+{% endblock %}
 {% block content %}
     <div class="page-header">
         <h1>Dashboard</h1>
@@ -26,10 +36,12 @@
             </div>
         </div>
         <script>
+        var _linkCopied = false;
         function copyRegisterMsg() {
             var text = document.getElementById('register-msg').textContent;
             var btn = document.getElementById('copy-btn-text');
             function onSuccess() {
+                _linkCopied = true;
                 btn.textContent = '已複製！';
                 setTimeout(function() { btn.textContent = '複製訊息'; }, 2000);
             }
@@ -106,7 +118,9 @@
                                 <td>
                                     {% set orgs = info.get('allowed_orgs', []) %}
                                     {% if orgs %}
-                                        {% for d in orgs %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                                        <div class="org-badge-group">
+                                            {% for d in orgs %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                                        </div>
                                     {% else %}
                                         <span style="color: var(--text-muted); font-size: 12px;">全部</span>
                                     {% endif %}
@@ -148,7 +162,9 @@
                                 <td>
                                     {% set orgs = info.get('allowed_orgs', []) %}
                                     {% if orgs %}
-                                        {% for d in orgs %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                                        <div class="org-badge-group">
+                                            {% for d in orgs %}<span class="badge badge-blue">{{ d }}</span>{% endfor %}
+                                        </div>
                                     {% else %}
                                         <span style="color: var(--text-muted); font-size: 12px;">全部</span>
                                     {% endif %}
@@ -176,27 +192,37 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for p in pending_registrations %}
+                    {% for group in pending_registrations | groupby('employee_name') %}
+                        {% set name = group.grouper %}
+                        {% set items = group.list %}
+                        {% set latest = items[-1] %}
                         <tr>
-                            <td>{{ p.employee_name }}</td>
                             <td>
-                                {% if p.app_id %}
-                                    <code style="font-size: 12px;">{{ p.app_id }}</code>
+                                {{ name }}
+                                {% if items | length > 1 %}
+                                    <span class="badge badge-gray" title="此使用者提交了 {{ items | length }} 次註冊請求">{{ items | length }} 次</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% set app_ids = items | map(attribute='app_id') | select('truthy') | list | unique | list %}
+                                {% if app_ids %}
+                                    {% for a in app_ids %}<code style="font-size: 12px;">{{ a }}</code>{% if not loop.last %} {% endif %}{% endfor %}
                                 {% else %}
                                     <span style="color: var(--text-muted); font-size: 12px;">—</span>
                                 {% endif %}
                             </td>
                             <td style="font-size: 12px; color: var(--text-muted);">
-                                <span class="expires-at" data-ts="{{ p.expires_at }}"></span>
+                                <span class="expires-at" data-ts="{{ latest.expires_at }}"></span>
                             </td>
                             <td style="white-space: nowrap;">
                                 <form method="POST"
                                       action="/admin/generate-register-link"
-                                      style="display: inline;">
+                                      style="display: inline;"
+                                      class="gen-link-form">
                                     {{ csrf_input(request) }}
                                     <input type="hidden"
                                            name="employee_name"
-                                           value="{{ p.employee_name }}">
+                                           value="{{ name }}">
                                     <button type="submit"
                                             class="btn btn-primary"
                                             style="padding: 4px 12px; font-size: 12px;">
@@ -206,11 +232,11 @@
                                 <form method="POST"
                                       action="/admin/deny-registration"
                                       style="display: inline; margin-left: 4px;"
-                                      onsubmit="return confirm('確定要拒絕 {{ p.employee_name }} 的註冊請求？');">
+                                      onsubmit="return confirm('確定要拒絕 {{ name }} 的註冊請求？');">
                                     {{ csrf_input(request) }}
                                     <input type="hidden"
                                            name="employee_name"
-                                           value="{{ p.employee_name }}">
+                                           value="{{ name }}">
                                     <button type="submit"
                                             class="btn"
                                             style="padding: 4px 12px; font-size: 12px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;">
@@ -251,6 +277,17 @@
             if (ts) {
                 el.textContent = new Date(ts * 1000).toLocaleString('zh-TW');
             }
+        });
+        // 如果頁面上已有未複製的註冊連結，點擊「產生註冊連結」時提醒
+        document.querySelectorAll('.gen-link-form').forEach(function (form) {
+            form.addEventListener('submit', function (e) {
+                var linkCard = document.getElementById('register-msg');
+                if (linkCard && typeof _linkCopied !== 'undefined' && !_linkCopied) {
+                    if (!confirm('上方有一組尚未複製的註冊連結，產生新連結後將無法再查看。\n確定要繼續嗎？')) {
+                        e.preventDefault();
+                    }
+                }
+            });
         });
     </script>
 {% endblock %}

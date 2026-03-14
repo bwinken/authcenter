@@ -59,6 +59,7 @@
         background: #fff;
         position: relative;
         transition: max-height 0.2s ease;
+        min-width: 140px;
     }
     .org-tag-picker.expanded {
         max-height: none;
@@ -212,6 +213,22 @@
         outline: none;
         border-color: var(--border-focus);
     }
+    /* ── App Table Layout ── */
+    .app-table { table-layout: fixed; }
+    .app-table th:nth-child(1),
+    .app-table td:nth-child(1) { width: 14%; }    /* App ID */
+    .app-table th:nth-child(2),
+    .app-table td:nth-child(2) { width: 14%; }    /* Name */
+    .app-table th:nth-child(3),
+    .app-table td:nth-child(3) { width: 30%; }    /* Allowed Orgs */
+    .app-table th:nth-child(4),
+    .app-table td:nth-child(4) { width: 14%; }    /* Default Level */
+    .app-table th:nth-child(5),
+    .app-table td:nth-child(5) { width: 14%; }    /* Token Hours */
+    .app-table th:nth-child(6),
+    .app-table td:nth-child(6) { width: 14%; }    /* Actions */
+    .app-table td { vertical-align: top; padding-top: 12px; }
+    .redirect-uri-row td { width: 100% !important; }
     </style>
 {% endblock %}
 {% block content %}
@@ -229,7 +246,7 @@
     <div class="admin-card">
         <h2>已註冊的 App（{{ apps | length }}）</h2>
         {% if apps %}
-            <table class="data-table">
+            <table class="data-table app-table">
                 <thead>
                     <tr>
                         <th>App ID</th>
