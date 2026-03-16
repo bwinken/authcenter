@@ -414,8 +414,8 @@ Dashboard 顯示系統總覽資訊：
 **重設密碼：**
 
 1. 展開目標組織，找到使用者
-2. 點擊「重設密碼」
-3. 系統自動產生新密碼並顯示在頁面上（僅顯示一次，請立即複製）
+2. 點擊「重設密碼」→ 系統產生一次性重設連結（6 小時有效）
+3. 複製訊息傳送給使用者，使用者點擊連結自行設定新密碼
 
 **刪除帳號：**
 
@@ -478,7 +478,8 @@ Dashboard 顯示系統總覽資訊：
 | `assign_app_admin` | 指定 App Admin |
 | `remove_app_admin` | 移除 App Admin |
 | `generate_register_link` | 產生員工註冊連結 |
-| `reset_password` | 重設使用者密碼 |
+| `generate_reset_link` | 產生密碼重設連結 |
+| `reset_password` | 直接重設使用者密碼（備用） |
 | `delete_user` | 刪除使用者帳號 |
 
 每筆紀錄包含：操作時間、操作者、操作類型、對象、詳情。
@@ -682,7 +683,7 @@ sequenceDiagram
     A-->>U: 500 App 設定錯誤，請聯繫管理員
 ```
 
-### 分支流程：忘記密碼
+### 分支流程：忘記密碼 → 重設密碼
 
 ```mermaid
 sequenceDiagram
@@ -690,6 +691,7 @@ sequenceDiagram
     participant C as Auth Center
     participant M as MSSQL
     participant T as Microsoft Teams
+    participant A as 管理員
 
     U->>C: GET /auth/forgot-password
     C-->>U: 回傳忘記密碼頁面
@@ -701,7 +703,18 @@ sequenceDiagram
     Note over T: 通知內容：使用者名稱、組織代碼
     T-->>C: 200 OK
     C-->>U: 「已通知管理員，請等待處理。」
-    Note over U: 不會自動重設密碼，需管理員手動處理
+
+    Note over A: 管理員收到 Teams 通知
+    A->>C: POST /admin/generate-reset-link {employee_name}
+    C-->>A: 302 → /admin/users?show_reset_link=xxx
+    Note over A: 頁面顯示重設連結卡片<br/>（含複製按鈕，6 小時有效）
+    A-->>U: 管理員將連結傳送給使用者
+
+    U->>C: GET /auth/reset-password?token=xxx
+    C-->>U: 回傳重設密碼頁面（設定新密碼表單）
+    U->>C: POST /auth/reset-password {token, password}
+    Note over C: 驗證 token → 更新密碼 → 銷毀 token
+    C-->>U: 「密碼重設成功！」
 ```
 
 ### Authorization Code 說明
@@ -1018,11 +1031,11 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 
 使用者可自行修改密碼，需輸入舊密碼和新密碼。
 
-### 忘記密碼
+### 忘記密碼 → 重設密碼
 
-路徑：`/auth/forgot-password`
+路徑：`/auth/forgot-password`（使用者申請）→ `/auth/reset-password?token=X`（使用者重設）
 
-使用者填寫 employee_name 後，系統會透過 Teams Webhook 通知管理員處理。不會自動重設密碼。
+使用者填寫 employee_name 後，系統透過 Teams Webhook 通知管理員。管理員在會員管理頁面點擊「重設密碼」產生一次性連結（6 小時有效），複製傳送給使用者。使用者點擊連結自行設定新密碼。
 
 ### 權限模型（Per-User-Per-App Level）
 
@@ -1074,6 +1087,8 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `POST` | `/auth/change-password` | 提交修改密碼 |
 | `GET` | `/auth/forgot-password` | 渲染忘記密碼頁面 |
 | `POST` | `/auth/forgot-password` | 觸發 Teams Webhook 通知管理員 |
+| `GET` | `/auth/reset-password?token=X` | 渲染重設密碼頁面（一次性連結） |
+| `POST` | `/auth/reset-password` | 提交新密碼（驗證 token 後更新） |
 | `GET` | `/auth/dashboard` | 使用者 Dashboard（需 JWT Cookie） |
 
 ### Admin 管理 (`/admin`)
@@ -1094,7 +1109,8 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `POST` | `/admin/permissions/revoke` | 撤銷使用者權限 | Super / App Admin |
 | `GET` | `/admin/admins` | App Admin 管理頁面 | Super Admin |
 | `GET` | `/admin/users` | 會員管理頁面 | Super Admin |
-| `POST` | `/admin/users/reset-password` | 重設使用者密碼 | Super Admin |
+| `POST` | `/admin/generate-reset-link` | 產生密碼重設連結（6hr） | Super Admin |
+| `POST` | `/admin/users/reset-password` | 直接重設使用者密碼（備用） | Super Admin |
 | `POST` | `/admin/users/delete` | 刪除使用者帳號 | Super Admin |
 | `POST` | `/admin/admins/assign` | 指定 App Admin | Super Admin |
 | `POST` | `/admin/admins/remove` | 移除 App Admin | Super Admin |
@@ -1249,6 +1265,14 @@ JWT header 包含 `kid` 以對應 JWKS 中的公鑰：`{"alg": "RS256", "typ": "
 | `redirect_uri` | TEXT | 註冊完成後的導回 URI |
 | `expires_at` | REAL | 過期時間（登入產生 10 分鐘 / 管理員產生 24 小時） |
 
+**`password_reset_tokens`** — 密碼重設令牌
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `token` | VARCHAR(64) PK | 隨機令牌 |
+| `employee_name` | VARCHAR(50) | 使用者名稱 |
+| `expires_at` | REAL | 過期時間（6 小時） |
+
 **`user_app_permissions`** — Per-User-Per-App 權限（Level）
 
 | 欄位 | 型別 | 說明 |
@@ -1311,7 +1335,9 @@ python scripts/generate_register_link.py kane.beh --app-id ai_chat_app --redirec
 
 ### 重設密碼
 
-當 Teams 收到忘記密碼通知後：
+**推薦方式（Web UI）：** 在管理後台「會員管理」頁面點擊「重設密碼」→ 系統產生一次性連結（6 小時有效）→ 複製傳送給使用者。
+
+**備用 CLI：** 當 Web UI 無法使用時，可直接產生隨機密碼：
 
 ```bash
 # 自動產生隨機密碼
