@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings, load_registered_apps, save_registered_apps
 from app.database import get_sqlite_session, get_mssql_session
 from app.auth import service
+from app.webhook.teams import notify_reset_link, notify_register_link
 from loguru import logger
 from app.auth.jwt_handler import create_token, verify_token
 
@@ -379,10 +380,12 @@ async def generate_register_link(
     )
     link = f"{settings.AUTH_CENTER_BASE_URL}/auth/register?token={token}"
 
+    # Notify user via Teams + admin channel with delivery status
+    await notify_register_link(employee_name, link, admin["sub"])
+
     await _log_action(
         sqlite_session, admin["sub"], "generate_register_link",
         target=employee_name, details=f"link={link}",
-
     )
 
     # PRG: 重導回 Dashboard，帶上 show_link 參數以顯示產生的連結
@@ -426,6 +429,9 @@ async def generate_reset_link(
 
     token = await service.generate_password_reset_token(sqlite_session, employee_name)
     link = f"{settings.AUTH_CENTER_BASE_URL}/auth/reset-password?token={token}"
+
+    # Notify user via Teams + admin channel with delivery status
+    await notify_reset_link(employee_name, link, admin["sub"])
 
     await _log_action(
         sqlite_session, admin["sub"], "generate_reset_link",

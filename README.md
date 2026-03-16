@@ -83,7 +83,7 @@ Auth Center 是一個為內部 AI 應用程式設計的中央認證服務，提�
 | 員工資料庫 | MSSQL (aioodbc，唯讀) |
 | 認證資料庫 | SQLite (aiosqlite，讀寫) |
 | 前端模板 | Jinja2 |
-| 通知 | Microsoft Teams Webhook |
+| 通知 | Microsoft Teams Webhook（管理員 Channel + 使用者 1:1 Chat） |
 | App 註冊 | YAML 設定檔 (`config/apps.yaml`) |
 
 ---
@@ -94,7 +94,8 @@ Auth Center 是一個為內部 AI 應用程式設計的中央認證服務，提�
 
 - Python 3.11+
 - MSSQL（員工主檔資料庫，需安裝 ODBC Driver）
-- Microsoft Teams Webhook URL（可選，用於通知）
+- Microsoft Teams Webhook URL（可選，管理員 Channel 通知）
+- Power Automate HTTP 觸發 URL（可選，使用者個人 Teams 通知）
 
 ### Step 1：安裝 ODBC Driver（Linux）
 
@@ -187,6 +188,9 @@ PUBLIC_KEY_PATH=D:/project/auth-center/keys/public.pem
 
 # Teams Webhook（可選）
 TEAMS_WEBHOOK_URL=https://your-org.webhook.office.com/webhookb2/xxx
+# 使用者個人通知（Power Automate Flow，可選）
+# TEAMS_USER_WEBHOOK_URL=https://prod-xx.logic.azure.com/workflows/xxx
+# COMPANY_EMAIL_DOMAIN=company.com
 # HTTP Proxy（內網環境需透過 Proxy 連外網時設定）
 # HTTP_PROXY=http://proxy.company.com:8080
 
@@ -300,7 +304,9 @@ http_proxy="http://proxy.company.local:8080" bash deploy/setup.sh
 | `SQLITE_PATH` | SQLite 檔案路徑 | `./auth_local.db` | |
 | `PRIVATE_KEY_PATH` | RS256 私鑰路徑 | `./keys/private.pem` | * |
 | `PUBLIC_KEY_PATH` | RS256 公鑰路徑 | `./keys/public.pem` | * |
-| `TEAMS_WEBHOOK_URL` | Microsoft Teams Webhook URL | — | |
+| `TEAMS_WEBHOOK_URL` | Teams 管理員 Channel Webhook URL | — | |
+| `TEAMS_USER_WEBHOOK_URL` | Teams 使用者個人通知 Power Automate URL | — | |
+| `COMPANY_EMAIL_DOMAIN` | 公司 Email 域名（nt_account → email） | — | |
 | `HTTP_PROXY` | HTTP Proxy（內網環境透過 Proxy 發送 Webhook） | — | |
 | `APP_PORT` | 服務監聽埠 | `8000` | |
 | `AUTH_CENTER_BASE_URL` | Auth Center 對外 URL | `http://localhost:8000` | |
@@ -706,9 +712,17 @@ sequenceDiagram
 
     Note over A: 管理員收到 Teams 通知
     A->>C: POST /admin/generate-reset-link {employee_name}
+    Note over C: 產生重設連結（6 小時有效）
+
+    C->>T: POST Power Automate（使用者 1:1 Chat）
+    Note over T: 發送重設連結給 employee_name@company.com
+    T-->>C: 200 OK / 失敗
+
+    C->>T: POST Webhook（管理員 Channel）
+    Note over T: 通知管理員：連結已產生<br/>+ 使用者 Teams 通知狀態（✅/❌）
+
     C-->>A: 302 → /admin/users?show_reset_link=xxx
-    Note over A: 頁面顯示重設連結卡片<br/>（含複製按鈕，6 小時有效）
-    A-->>U: 管理員將連結傳送給使用者
+    Note over A: 頁面顯示重設連結卡片（含複製按鈕）<br/>如使用者通知失敗，管理員手動轉傳
 
     U->>C: GET /auth/reset-password?token=xxx
     C-->>U: 回傳重設密碼頁面（設定新密碼表單）
@@ -1035,7 +1049,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 
 路徑：`/auth/forgot-password`（使用者申請）→ `/auth/reset-password?token=X`（使用者重設）
 
-使用者填寫 employee_name 後，系統透過 Teams Webhook 通知管理員。管理員在會員管理頁面點擊「重設密碼」產生一次性連結（6 小時有效），複製傳送給使用者。使用者點擊連結自行設定新密碼。
+使用者填寫 employee_name 後，系統透過 Teams Webhook 通知管理員。管理員在會員管理頁面點擊「重設密碼」產生一次性連結（6 小時有效）。系統會嘗試透過 Power Automate 直接發送連結給使用者的 Teams 1:1 Chat，同時在管理員 Channel 顯示投遞狀態（✅ 已發送 / ❌ 未發送）。若使用者通知失敗，管理員可手動複製連結傳送。
 
 ### 權限模型（Per-User-Per-App Level）
 
