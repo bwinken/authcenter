@@ -207,6 +207,90 @@ SUPER_ADMIN_EMPLOYEES=kane.beh,john.doe
 
 > **注意**：RSA 金鑰路徑建議使用**絕對路徑**，避免在不同目錄啟動時找不到檔案。
 
+### Step 4.5：設定 Teams 使用者通知（可選）
+
+此步驟設定 Power Automate flow，讓系統在管理員產生註冊/重設連結時，自動透過 Teams 1:1 Chat 發送給使用者。若不設定，行為與原本相同（管理員手動轉傳連結）。
+
+#### 建立 Power Automate Flow
+
+1. 前往 [make.powerautomate.com](https://make.powerautomate.com) → **建立** → **自動化雲端流程**
+2. 觸發條件搜尋「**When an HTTP request is received**」
+3. Request Body JSON Schema 填入：
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "email": { "type": "string" },
+    "title": { "type": "string" },
+    "body": { "type": "string" }
+  },
+  "required": ["email", "title", "body"]
+}
+```
+
+4. 新增動作：搜尋「**Microsoft Teams**」→「**Post card in a chat or channel**」
+
+| 欄位 | 設定值 |
+|---|---|
+| Post as | Flow bot |
+| Post in | Chat with Flow bot |
+| Recipient | 動態內容 → `email` |
+| Adaptive Card | 見下方 JSON |
+
+5. Adaptive Card 欄位（切換到程式碼檢視）：
+
+```json
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.4",
+  "body": [
+    {
+      "type": "TextBlock",
+      "size": "Large",
+      "weight": "Bolder",
+      "text": "@{triggerBody()?['title']}"
+    },
+    {
+      "type": "TextBlock",
+      "text": "@{triggerBody()?['body']}",
+      "wrap": true
+    }
+  ]
+}
+```
+
+6. **儲存**，回到觸發條件步驟，複製「HTTP POST URL」
+7. 將 URL 和公司 Email 域名加入 `.env`：
+
+```bash
+TEAMS_USER_WEBHOOK_URL=https://prod-xx.westus.logic.azure.com/workflows/xxx/...
+COMPANY_EMAIL_DOMAIN=company.com
+```
+
+> `nt_account` + `COMPANY_EMAIL_DOMAIN` 會組合成 email（如 `kane.beh@company.com`），Power Automate 以此找到 Teams 使用者。
+
+#### 運作方式
+
+管理員產生連結時，系統會：
+
+1. 嘗試透過 Power Automate 發送到使用者的 **Teams 1:1 Chat**（來自 Flow Bot）
+2. 在管理員 **Channel** 發送通知，附上投遞狀態：
+   - `✅ 已發送` — 使用者已在 Teams 收到連結
+   - `❌ 未發送（需手動轉傳）` — Power Automate 未設定或發送失敗
+
+使用者收到的訊息範例（來自 Power Automate / Flow Bot）：
+
+```
+🔑 密碼重設連結
+
+管理員已為您產生密碼重設連結（6 小時內有效）：
+http://auth.company.com/auth/reset-password?token=abc123...
+
+如有問題請聯繫系統管理員。
+```
+
 ### Step 5：環境檢查（Preflight Check）
 
 啟動前建議先跑環境檢查，逐步確認所有元件是否正確設定：
