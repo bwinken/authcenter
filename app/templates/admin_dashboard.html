@@ -204,7 +204,7 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% set app_ids = items | map(attribute='app_id') | select('truthy') | list | unique | list %}
+                                {% set app_ids = items | map(attribute='app_id') | select | list | unique | list %}
                                 {% if app_ids %}
                                     {% for a in app_ids %}<code style="font-size: 12px;">{{ a }}</code>{% if not loop.last %} {% endif %}{% endfor %}
                                 {% else %}
