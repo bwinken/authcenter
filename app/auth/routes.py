@@ -807,6 +807,79 @@ async def forgot_password_submit(
     return templates.TemplateResponse("forgot_password.html", ctx)
 
 
+# ─── Password Reset (Token-based) ──────────────────────────────
+
+
+@router.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page(
+    request: Request,
+    token: str = Query(""),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """渲染重設密碼頁面。驗證 reset token 後讓使用者自行設定新密碼。"""
+    ctx = {"request": request, "employee_name": None, "token": "", "error": None, "success": False}
+
+    if not token:
+        ctx["error"] = "缺少重設連結 token，請向管理員索取新的重設連結。"
+        return templates.TemplateResponse("reset_password.html", ctx)
+
+    data = await service.consume_password_reset_token(sqlite_session, token)
+    if data is None:
+        ctx["error"] = "重設連結已過期或無效，請向管理員索取新的連結。"
+        return templates.TemplateResponse("reset_password.html", ctx)
+
+    ctx["employee_name"] = data["employee_name"]
+    ctx["token"] = token
+    return templates.TemplateResponse("reset_password.html", ctx)
+
+
+@router.post("/reset-password")
+async def reset_password_submit(
+    request: Request,
+    token: str = Form(...),
+    employee_name: str = Form(...),
+    password: str = Form(...),
+    confirm_password: str = Form(...),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """處理重設密碼表單提交。"""
+    # Re-validate token (may have expired between GET and POST)
+    data = await service.consume_password_reset_token(sqlite_session, token)
+    if data is None:
+        return templates.TemplateResponse("reset_password.html", {
+            "request": request, "employee_name": employee_name,
+            "token": "", "error": "重設連結已過期或無效，請向管理員索取新的連結。", "success": False,
+        })
+
+    # Use token's employee_name to prevent form tampering
+    employee_name = service.normalize_employee_name(data["employee_name"])
+    ctx = {"request": request, "employee_name": employee_name, "token": token, "error": None, "success": False}
+
+    if password != confirm_password:
+        ctx["error"] = "兩次輸入的密碼不一致。"
+        return templates.TemplateResponse("reset_password.html", ctx)
+
+    pw_error = service.validate_password(password, employee_name)
+    if pw_error:
+        ctx["error"] = pw_error
+        return templates.TemplateResponse("reset_password.html", ctx)
+
+    # Update password
+    hashed = bcrypt.hash(password)
+    await sqlite_session.execute(
+        text("UPDATE user_accounts SET password_hash = :h WHERE employee_name = :e"),
+        {"h": hashed, "e": employee_name},
+    )
+    await sqlite_session.commit()
+
+    # Consume the token
+    await service.invalidate_password_reset_token(sqlite_session, token)
+
+    ctx["token"] = ""
+    ctx["success"] = True
+    return templates.TemplateResponse("reset_password.html", ctx)
+
+
 # ─── Public Key Endpoint ─────────────────────────────────────
 
 @router.get("/.well-known/public-key")

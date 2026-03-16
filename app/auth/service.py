@@ -134,6 +134,59 @@ async def extend_registration_token(
     await sqlite_session.commit()
 
 
+# ─── Password Reset Tokens (SQLite-backed) ─────────────────────
+PASSWORD_RESET_TOKEN_TTL = 21600  # 6 hours
+
+
+async def generate_password_reset_token(
+    sqlite_session: AsyncSession,
+    employee_name: str,
+    ttl: int = PASSWORD_RESET_TOKEN_TTL,
+) -> str:
+    """Generate a one-time password reset token (6h TTL)."""
+    employee_name = normalize_employee_name(employee_name)
+    token = secrets.token_urlsafe(32)
+    expires_at = time.time() + ttl
+    await sqlite_session.execute(
+        text(
+            "INSERT INTO password_reset_tokens (token, employee_name, expires_at) "
+            "VALUES (:token, :ename, :exp)"
+        ),
+        {"token": token, "ename": employee_name, "exp": expires_at},
+    )
+    await sqlite_session.commit()
+    logger.info("Password reset token generated for %s (ttl=%ds)", employee_name, ttl)
+    return token
+
+
+async def consume_password_reset_token(
+    sqlite_session: AsyncSession, token: str
+) -> dict | None:
+    """Validate and return reset token data. Does NOT delete (allows form resubmit on error)."""
+    result = await sqlite_session.execute(
+        text(
+            "SELECT employee_name, expires_at "
+            "FROM password_reset_tokens WHERE token = :token"
+        ),
+        {"token": token},
+    )
+    row = result.fetchone()
+    if row is None or time.time() > row[1]:
+        return None
+    return {"employee_name": row[0]}
+
+
+async def invalidate_password_reset_token(
+    sqlite_session: AsyncSession, token: str
+) -> None:
+    """Remove a password reset token after successful use."""
+    await sqlite_session.execute(
+        text("DELETE FROM password_reset_tokens WHERE token = :token"),
+        {"token": token},
+    )
+    await sqlite_session.commit()
+
+
 # ─── Level → Scopes Mapping ─────────────────────────────────
 
 LEVEL_SCOPE_MAP = {
@@ -669,16 +722,18 @@ async def deny_pending_registration(
 
 
 async def cleanup_expired_tokens(sqlite_session: AsyncSession) -> None:
-    """Remove expired auth codes and registration tokens. Called by background task."""
+    """Remove expired auth codes, registration tokens, and password reset tokens."""
+    now = time.time()
     result1 = await sqlite_session.execute(
-        text("DELETE FROM auth_codes WHERE expires_at < :now"),
-        {"now": time.time()},
+        text("DELETE FROM auth_codes WHERE expires_at < :now"), {"now": now},
     )
     result2 = await sqlite_session.execute(
-        text("DELETE FROM registration_tokens WHERE expires_at < :now"),
-        {"now": time.time()},
+        text("DELETE FROM registration_tokens WHERE expires_at < :now"), {"now": now},
+    )
+    result3 = await sqlite_session.execute(
+        text("DELETE FROM password_reset_tokens WHERE expires_at < :now"), {"now": now},
     )
     await sqlite_session.commit()
-    deleted = result1.rowcount + result2.rowcount
+    deleted = result1.rowcount + result2.rowcount + result3.rowcount
     if deleted > 0:
         logger.info("Cleaned up %d expired tokens", deleted)

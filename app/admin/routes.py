@@ -390,6 +390,52 @@ async def generate_register_link(
     return RedirectResponse(f"/admin/dashboard?{qs}", status_code=303)
 
 
+@router.post("/generate-reset-link")
+async def generate_reset_link(
+    request: Request,
+    employee_name: str = Form(...),
+    admin_token: str | None = Cookie(default=None),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """管理員產生密碼重設連結（6 小時有效）。
+
+    與註冊連結相同模式：管理員複製連結給使用者，使用者自行設定新密碼。
+    使用 PRG 模式：產生後重導回會員管理頁面。
+    """
+    admin = _verify_admin_cookie(admin_token)
+    if admin is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    if not admin.get("is_super"):
+        return _forbidden("僅 Super Admin 可以產生重設連結。")
+
+    settings = get_settings()
+    employee_name = employee_name.strip().lower()
+
+    # Verify the employee has an existing account
+    has_account = await service.check_account_exists(sqlite_session, employee_name)
+    if not has_account:
+        qs = urlencode({"err": f"{employee_name} 尚未註冊帳號，無法重設密碼。"})
+        return RedirectResponse(f"/admin/users?{qs}", status_code=303)
+
+    # Clean up old reset tokens for this employee
+    await sqlite_session.execute(
+        text("DELETE FROM password_reset_tokens WHERE employee_name = :ename"),
+        {"ename": employee_name},
+    )
+    await sqlite_session.commit()
+
+    token = await service.generate_password_reset_token(sqlite_session, employee_name)
+    link = f"{settings.AUTH_CENTER_BASE_URL}/auth/reset-password?token={token}"
+
+    await _log_action(
+        sqlite_session, admin["sub"], "generate_reset_link",
+        target=employee_name, details=f"link={link}",
+    )
+
+    qs = urlencode({"show_reset_link": employee_name})
+    return RedirectResponse(f"/admin/users?{qs}", status_code=303)
+
+
 @router.post("/deny-registration")
 async def deny_registration(
     request: Request,
@@ -999,6 +1045,7 @@ async def manage_users(
     search: str = "",
     msg: str = "",
     err: str = "",
+    show_reset_link: str = "",
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
     mssql_session: AsyncSession = Depends(get_mssql_session),
@@ -1007,6 +1054,7 @@ async def manage_users(
 
     列出所有已註冊帳號，依組織代碼分組展開。
     支援以 employee_name 搜尋篩選。
+    當帶有 show_reset_link 參數時，顯示該員工的密碼重設連結。
     """
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
@@ -1053,6 +1101,24 @@ async def manage_users(
                     org_count=len(org_groups), search=search,
                     reset_password=None,
                     success=msg or None, error=err or None)
+
+    # Show reset link if just generated
+    if show_reset_link.strip():
+        emp = show_reset_link.strip().lower()
+        result = await sqlite_session.execute(
+            text(
+                "SELECT token FROM password_reset_tokens "
+                "WHERE employee_name = :ename AND expires_at > :now "
+                "ORDER BY expires_at DESC LIMIT 1"
+            ),
+            {"ename": emp, "now": time.time()},
+        )
+        row = result.fetchone()
+        if row:
+            settings = get_settings()
+            link = f"{settings.AUTH_CENTER_BASE_URL}/auth/reset-password?token={row[0]}"
+            ctx["reset_link_info"] = {"employee_name": emp, "link": link}
+
     return templates.TemplateResponse("admin_users.html", ctx)
 
 

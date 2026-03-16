@@ -121,6 +121,17 @@ async def lifespan(app: FastAPI):
             )
         """))
         await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                token         VARCHAR(64)  PRIMARY KEY,
+                employee_name VARCHAR(50)  NOT NULL,
+                expires_at    REAL         NOT NULL
+            )
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_reset_tokens_expires_at
+            ON password_reset_tokens(expires_at)
+        """))
+        await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS user_app_permissions (
                 employee_name VARCHAR(50)  NOT NULL,
                 app_id        VARCHAR(100) NOT NULL,
