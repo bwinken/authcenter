@@ -1,8 +1,6 @@
 """Microsoft Teams Webhook notification module.
 
-Supports two channels:
-- TEAMS_WEBHOOK_URL: admin channel (Incoming Webhook → channel)
-- TEAMS_USER_WEBHOOK_URL: user 1:1 chat (Power Automate HTTP trigger → Flow Bot)
+Sends notifications to admin channel via TEAMS_WEBHOOK_URL (Incoming Webhook).
 """
 
 import httpx
@@ -30,21 +28,14 @@ async def _post_webhook(url: str, payload: dict) -> bool:
 
 
 def _build_adaptive_card(
-    title: str, subtitle: str, facts: list[dict], copyable_message: str = "",
+    title: str, subtitle: str, facts: list[dict],
 ) -> dict:
-    """Build an Adaptive Card payload for Teams Incoming Webhook.
-
-    If *copyable_message* is provided, a highlighted text block is appended
-    so the admin can directly copy-paste it to the target user.
-    """
+    """Build an Adaptive Card payload for Teams Incoming Webhook."""
     body: list[dict] = [
         {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": title},
         {"type": "TextBlock", "text": subtitle, "wrap": True},
         {"type": "FactSet", "facts": facts},
     ]
-    if copyable_message:
-        body.append({"type": "TextBlock", "text": "── 以下訊息可直接複製轉傳給使用者 ──", "wrap": True, "weight": "Bolder", "separator": True})
-        body.append({"type": "TextBlock", "text": copyable_message, "wrap": True, "fontType": "Monospace"})
     return {
         "type": "message",
         "attachments": [
@@ -62,42 +53,15 @@ def _build_adaptive_card(
 
 
 async def _send_adaptive_card(
-    title: str, subtitle: str, facts: list[dict], copyable_message: str = "",
+    title: str, subtitle: str, facts: list[dict],
 ) -> bool:
     """Send an Adaptive Card to the admin channel via Incoming Webhook."""
     settings = get_settings()
     if not settings.TEAMS_WEBHOOK_URL:
         logger.warning("TEAMS_WEBHOOK_URL 未設定，跳過通知")
         return False
-    payload = _build_adaptive_card(title, subtitle, facts, copyable_message)
+    payload = _build_adaptive_card(title, subtitle, facts)
     return await _post_webhook(settings.TEAMS_WEBHOOK_URL, payload)
-
-
-# ─── User 1:1 Notification (Power Automate) ────────────────────
-
-
-async def send_user_message(employee_name: str, title: str, body: str) -> bool:
-    """Send a message to a specific user via Power Automate HTTP trigger.
-
-    The Power Automate flow receives {email, title, body} and posts
-    an Adaptive Card to the user's 1:1 chat with Flow Bot.
-    Returns False if TEAMS_USER_WEBHOOK_URL or COMPANY_EMAIL_DOMAIN is not configured.
-    """
-    settings = get_settings()
-    if not settings.TEAMS_USER_WEBHOOK_URL or not settings.COMPANY_EMAIL_DOMAIN:
-        logger.info("TEAMS_USER_WEBHOOK_URL 或 COMPANY_EMAIL_DOMAIN 未設定，跳過使用者通知")
-        return False
-
-    email = f"{employee_name}@{settings.COMPANY_EMAIL_DOMAIN}"
-    payload = {
-        "email": email,
-        "title": title,
-        "body": body,
-    }
-    sent = await _post_webhook(settings.TEAMS_USER_WEBHOOK_URL, payload)
-    if sent:
-        logger.info("使用者通知已發送: %s → %s", title, email)
-    return sent
 
 
 # ─── Admin Channel Notifications ───────────────────────────────
@@ -131,65 +95,3 @@ async def send_registration_request_notification(staff: StaffInfo, app_name: str
     )
 
 
-async def notify_reset_link(employee_name: str, link: str, admin_name: str) -> bool:
-    """Send password reset link to user and notify admin channel with delivery status.
-
-    1. Attempt to send reset link to user via Power Automate
-    2. Always notify admin channel with delivery status
-    Returns True if admin channel notification succeeded.
-    """
-    # Step 1: Try sending to user
-    user_sent = await send_user_message(
-        employee_name,
-        title="🔑 密碼重設連結",
-        body=f"管理員已為您產生密碼重設連結（6 小時內有效）：\n{link}\n\n如有問題請聯繫系統管理員。",
-    )
-
-    # Step 2: Notify admin channel with delivery status
-    status = "✅ 已發送" if user_sent else "❌ 未發送（需手動轉傳）"
-    copyable = (
-        f"Hi，你的 AuthCenter 密碼重設連結已產生（6 小時內有效）：\n"
-        f"{link}\n\n"
-        f"請點擊連結重設密碼。如有問題請聯繫系統管理員。"
-    )
-    return await _send_adaptive_card(
-        title="🔑 密碼重設連結已產生",
-        subtitle="管理員已產生密碼重設連結。",
-        facts=[
-            {"title": "使用者", "value": employee_name},
-            {"title": "操作者", "value": admin_name},
-            {"title": "使用者 Teams 通知", "value": status},
-        ],
-        copyable_message="" if user_sent else copyable,
-    )
-
-
-async def notify_register_link(employee_name: str, link: str, admin_name: str) -> bool:
-    """Send registration link to user and notify admin channel with delivery status.
-
-    1. Attempt to send register link to user via Power Automate
-    2. Always notify admin channel with delivery status
-    Returns True if admin channel notification succeeded.
-    """
-    user_sent = await send_user_message(
-        employee_name,
-        title="📋 AuthCenter 帳號註冊連結",
-        body=f"管理員已為您產生註冊連結（24 小時內有效）：\n{link}\n\n請點擊連結完成帳號註冊。如有問題請聯繫系統管理員。",
-    )
-
-    status = "✅ 已發送" if user_sent else "❌ 未發送（需手動轉傳）"
-    copyable = (
-        f"Hi，你的 AuthCenter 帳號註冊連結已產生（24 小時內有效）：\n"
-        f"{link}\n\n"
-        f"請點擊連結完成帳號註冊。如有問題請聯繫系統管理員。"
-    )
-    return await _send_adaptive_card(
-        title="📋 註冊連結已產生",
-        subtitle="管理員已產生員工註冊連結。",
-        facts=[
-            {"title": "使用者", "value": employee_name},
-            {"title": "操作者", "value": admin_name},
-            {"title": "使用者 Teams 通知", "value": status},
-        ],
-        copyable_message="" if user_sent else copyable,
-    )

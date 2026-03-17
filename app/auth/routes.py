@@ -798,10 +798,7 @@ async def forgot_password_submit(
         ctx["error"] = "此員工尚未註冊 AuthCenter 帳號，請先完成註冊。"
         return templates.TemplateResponse("forgot_password.html", ctx)
 
-    sent = await send_forgot_password_notification(staff)
-    if not sent:
-        ctx["error"] = "通知發送失敗，請聯繫 IT 部門。"
-        return templates.TemplateResponse("forgot_password.html", ctx)
+    await send_forgot_password_notification(staff)
 
     ctx["success"] = True
     return templates.TemplateResponse("forgot_password.html", ctx)

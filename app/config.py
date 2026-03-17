@@ -40,8 +40,6 @@ class Settings:
 
     # Teams Webhook
     TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
-    TEAMS_USER_WEBHOOK_URL: str = os.getenv("TEAMS_USER_WEBHOOK_URL", "")
-    COMPANY_EMAIL_DOMAIN: str = os.getenv("COMPANY_EMAIL_DOMAIN", "")
 
     # HTTP Proxy (for outbound requests like Teams Webhook)
     HTTP_PROXY: str = os.getenv("HTTP_PROXY", "")
