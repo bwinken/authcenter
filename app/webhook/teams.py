@@ -42,20 +42,24 @@ def _build_adaptive_card(
         {"type": "TextBlock", "text": subtitle, "wrap": True},
         {"type": "FactSet", "facts": facts},
     ]
+    actions: list[dict] = []
     if copyable_message:
-        body.append({"type": "TextBlock", "text": "── 以下訊息可直接複製轉傳給使用者 ──", "wrap": True, "weight": "Bolder", "separator": True})
-        body.append({"type": "TextBlock", "text": copyable_message, "wrap": True, "fontType": "Monospace"})
+        body.append({"type": "TextBlock", "text": copyable_message, "wrap": True, "fontType": "Monospace", "separator": True})
+        actions.append({"type": "Action.CopyToClipboard", "title": "📋 複製訊息", "text": copyable_message})
+    card_content: dict = {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.5",
+        "body": body,
+    }
+    if actions:
+        card_content["actions"] = actions
     return {
         "type": "message",
         "attachments": [
             {
                 "contentType": "application/vnd.microsoft.card.adaptive",
-                "content": {
-                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                    "type": "AdaptiveCard",
-                    "version": "1.4",
-                    "body": body,
-                },
+                "content": card_content,
             }
         ],
     }
