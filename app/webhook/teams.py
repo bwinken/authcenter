@@ -29,8 +29,22 @@ async def _post_webhook(url: str, payload: dict) -> bool:
         return False
 
 
-def _build_adaptive_card(title: str, subtitle: str, facts: list[dict]) -> dict:
-    """Build an Adaptive Card payload for Teams Incoming Webhook."""
+def _build_adaptive_card(
+    title: str, subtitle: str, facts: list[dict], copyable_message: str = "",
+) -> dict:
+    """Build an Adaptive Card payload for Teams Incoming Webhook.
+
+    If *copyable_message* is provided, a highlighted text block is appended
+    so the admin can directly copy-paste it to the target user.
+    """
+    body: list[dict] = [
+        {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": title},
+        {"type": "TextBlock", "text": subtitle, "wrap": True},
+        {"type": "FactSet", "facts": facts},
+    ]
+    if copyable_message:
+        body.append({"type": "TextBlock", "text": "── 以下訊息可直接複製轉傳給使用者 ──", "wrap": True, "weight": "Bolder", "separator": True})
+        body.append({"type": "TextBlock", "text": copyable_message, "wrap": True, "fontType": "Monospace"})
     return {
         "type": "message",
         "attachments": [
@@ -40,24 +54,22 @@ def _build_adaptive_card(title: str, subtitle: str, facts: list[dict]) -> dict:
                     "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
                     "type": "AdaptiveCard",
                     "version": "1.4",
-                    "body": [
-                        {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": title},
-                        {"type": "TextBlock", "text": subtitle, "wrap": True},
-                        {"type": "FactSet", "facts": facts},
-                    ],
+                    "body": body,
                 },
             }
         ],
     }
 
 
-async def _send_adaptive_card(title: str, subtitle: str, facts: list[dict]) -> bool:
+async def _send_adaptive_card(
+    title: str, subtitle: str, facts: list[dict], copyable_message: str = "",
+) -> bool:
     """Send an Adaptive Card to the admin channel via Incoming Webhook."""
     settings = get_settings()
     if not settings.TEAMS_WEBHOOK_URL:
         logger.warning("TEAMS_WEBHOOK_URL 未設定，跳過通知")
         return False
-    payload = _build_adaptive_card(title, subtitle, facts)
+    payload = _build_adaptive_card(title, subtitle, facts, copyable_message)
     return await _post_webhook(settings.TEAMS_WEBHOOK_URL, payload)
 
 
@@ -135,6 +147,11 @@ async def notify_reset_link(employee_name: str, link: str, admin_name: str) -> b
 
     # Step 2: Notify admin channel with delivery status
     status = "✅ 已發送" if user_sent else "❌ 未發送（需手動轉傳）"
+    copyable = (
+        f"Hi，你的 AuthCenter 密碼重設連結已產生（6 小時內有效）：\n"
+        f"{link}\n\n"
+        f"請點擊連結重設密碼。如有問題請聯繫系統管理員。"
+    )
     return await _send_adaptive_card(
         title="🔑 密碼重設連結已產生",
         subtitle="管理員已產生密碼重設連結。",
@@ -143,6 +160,7 @@ async def notify_reset_link(employee_name: str, link: str, admin_name: str) -> b
             {"title": "操作者", "value": admin_name},
             {"title": "使用者 Teams 通知", "value": status},
         ],
+        copyable_message="" if user_sent else copyable,
     )
 
 
@@ -160,6 +178,11 @@ async def notify_register_link(employee_name: str, link: str, admin_name: str) -
     )
 
     status = "✅ 已發送" if user_sent else "❌ 未發送（需手動轉傳）"
+    copyable = (
+        f"Hi，你的 AuthCenter 帳號註冊連結已產生（24 小時內有效）：\n"
+        f"{link}\n\n"
+        f"請點擊連結完成帳號註冊。如有問題請聯繫系統管理員。"
+    )
     return await _send_adaptive_card(
         title="📋 註冊連結已產生",
         subtitle="管理員已產生員工註冊連結。",
@@ -168,4 +191,5 @@ async def notify_register_link(employee_name: str, link: str, admin_name: str) -
             {"title": "操作者", "value": admin_name},
             {"title": "使用者 Teams 通知", "value": status},
         ],
+        copyable_message="" if user_sent else copyable,
     )
