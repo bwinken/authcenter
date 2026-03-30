@@ -619,6 +619,11 @@ async def delete_user(sqlite_session: AsyncSession, employee_name: str) -> bool:
         text("DELETE FROM user_app_permissions WHERE employee_name = :ename"),
         {"ename": employee_name},
     )
+    # 刪除使用者時，同步移除自動指派的 App Admin 記錄
+    await sqlite_session.execute(
+        text("DELETE FROM app_admins WHERE employee_name = :ename AND auto_assigned = 1"),
+        {"ename": employee_name},
+    )
     result = await sqlite_session.execute(
         text("DELETE FROM user_accounts WHERE employee_name = :ename"),
         {"ename": employee_name},
