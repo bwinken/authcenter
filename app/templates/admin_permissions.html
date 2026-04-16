@@ -49,47 +49,51 @@
             </div>
         </form>
     </div>
-    <!-- Permissions Table -->
+    <!-- Permissions Table (grouped by app) -->
     <div class="admin-card">
         <h2>權限列表（{{ permissions | length }}）</h2>
-        {% if permissions %}
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>使用者</th>
-                        <th>應用程式</th>
-                        <th>Level<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">0=Denied, 1=Read, 2=Read+Write, 3=Read+Write+Admin</span></span></th>
-                        <th>Scopes<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">由 Level 自動對應的存取範圍，App 端用來做細粒度權限控制。</span></span></th>
-                        <th>授權者</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for perm in permissions %}
+        {% if grouped_permissions %}
+            {% for app_id, perms in grouped_permissions.items() %}
+                <h3 style="margin: 18px 0 8px 0; font-size: 15px; color: var(--text-primary);">
+                    {{ apps.get(app_id, {}).get('name', app_id) }}
+                    <span style="font-size: 12px; color: var(--text-muted); font-weight: normal; margin-left: 6px;">{{ app_id }}（{{ perms | length }}）</span>
+                </h3>
+                <table class="data-table" style="margin-bottom: 16px;">
+                    <thead>
                         <tr>
-                            <td>{{ perm.employee_name }}</td>
-                            <td>{{ apps.get(perm.app_id, {}).get('name', perm.app_id) }}</td>
-                            <td>
-                                <span class="level-tag level-{{ perm.level }}">Level {{ perm.level }}</span>
-                            </td>
-                            <td>
-                                {% for s in perm.scopes %}<span class="scope-tag">{{ s }}</span>{% endfor %}
-                            </td>
-                            <td style="color: var(--text-muted);">{{ perm.granted_by }}</td>
-                            <td>
-                                <form method="POST"
-                                      action="/admin/permissions/revoke"
-                                      style="display: inline">
-                                    {{ csrf_input(request) }}
-                                    <input type="hidden" name="employee_name" value="{{ perm.employee_name }}">
-                                    <input type="hidden" name="app_id" value="{{ perm.app_id }}">
-                                    <button type="submit" class="btn btn-danger btn-sm">撤銷</button>
-                                </form>
-                            </td>
+                            <th>使用者</th>
+                            <th>Level<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">0=Denied, 1=Read, 2=Read+Write, 3=Read+Write+Admin</span></span></th>
+                            <th>Scopes<span class="info-tip"><svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 12.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5V7h1.5v4.5z"/></svg><span class="tip-text">由 Level 自動對應的存取範圍，App 端用來做細粒度權限控制。</span></span></th>
+                            <th>授權者</th>
+                            <th></th>
                         </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {% for perm in perms %}
+                            <tr>
+                                <td>{{ perm.employee_name }}</td>
+                                <td>
+                                    <span class="level-tag level-{{ perm.level }}">Level {{ perm.level }}</span>
+                                </td>
+                                <td>
+                                    {% for s in perm.scopes %}<span class="scope-tag">{{ s }}</span>{% endfor %}
+                                </td>
+                                <td style="color: var(--text-muted);">{{ perm.granted_by }}</td>
+                                <td>
+                                    <form method="POST"
+                                          action="/admin/permissions/revoke"
+                                          style="display: inline">
+                                        {{ csrf_input(request) }}
+                                        <input type="hidden" name="employee_name" value="{{ perm.employee_name }}">
+                                        <input type="hidden" name="app_id" value="{{ perm.app_id }}">
+                                        <button type="submit" class="btn btn-danger btn-sm">撤銷</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% endfor %}
         {% else %}
             <div class="empty-state">沒有符合條件的權限記錄。</div>
         {% endif %}
