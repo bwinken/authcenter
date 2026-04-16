@@ -566,7 +566,7 @@ async def list_permissions(
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     result = await sqlite_session.execute(
-        text(f"SELECT employee_name, app_id, level, granted_by, granted_at FROM user_app_permissions {where} ORDER BY employee_name, app_id"),
+        text(f"SELECT employee_name, app_id, level, granted_by, granted_at FROM user_app_permissions {where} ORDER BY app_id, level DESC, employee_name"),
         params,
     )
     return [

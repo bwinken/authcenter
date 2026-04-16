@@ -3,6 +3,7 @@
 import hmac
 import secrets
 import time
+from itertools import groupby
 from urllib.parse import urlencode
 
 import jwt
@@ -736,8 +737,15 @@ async def permissions_page(
     # For App Admin, only show their apps in the dropdown
     visible_apps = apps if admin.get("is_super") else {k: v for k, v in apps.items() if k in (admin_apps or [])}
 
+    # Group permissions by app (already sorted by app_id, level DESC)
+    grouped_permissions = {
+        app_id: list(perms)
+        for app_id, perms in groupby(permissions, key=lambda p: p["app_id"])
+    }
+
     ctx = _base_ctx(request, admin, "permissions",
-                    permissions=permissions, apps=visible_apps, valid_levels=VALID_LEVELS,
+                    permissions=permissions, grouped_permissions=grouped_permissions,
+                    apps=visible_apps, valid_levels=VALID_LEVELS,
                     user_filter=user_filter, app_filter=app_filter)
     return templates.TemplateResponse("admin_permissions.html", ctx)
 
@@ -775,8 +783,13 @@ async def grant_permission(
 
     apps = load_registered_apps()
     if app_id not in apps:
+        err_permissions = await service.list_permissions(sqlite_session)
+        err_grouped = {
+            aid: list(perms)
+            for aid, perms in groupby(err_permissions, key=lambda p: p["app_id"])
+        }
         ctx = _base_ctx(request, admin, "permissions",
-                        permissions=await service.list_permissions(sqlite_session),
+                        permissions=err_permissions, grouped_permissions=err_grouped,
                         apps=apps, valid_levels=VALID_LEVELS,
                         user_filter="", app_filter="",
                         error=f"App ID '{app_id}' 不存在。")
