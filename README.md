@@ -390,7 +390,7 @@ http_proxy="http://proxy.company.local:8080" bash deploy/setup.sh
 | `PUBLIC_KEY_PATH` | RS256 公鑰路徑 | `./keys/public.pem` | * |
 | `TEAMS_WEBHOOK_URL` | Teams 管理員 Channel Webhook URL | — | |
 | `TEAMS_USER_WEBHOOK_URL` | Teams 使用者個人通知 Power Automate URL | — | |
-| `COMPANY_EMAIL_DOMAIN` | 公司 Email 域名（nt_account → email） | — | |
+| `COMPANY_EMAIL_DOMAIN` | 公司 Email 域名（nt_account → email，用於 Teams 通知及 OIDC `email` claim） | — | |
 | `HTTP_PROXY` | HTTP Proxy（內網環境透過 Proxy 發送 Webhook） | — | |
 | `APP_PORT` | 服務監聽埠 | `8000` | |
 | `AUTH_CENTER_BASE_URL` | Auth Center 對外 URL | `http://localhost:8000` | |

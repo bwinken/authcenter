@@ -56,7 +56,7 @@ async def openid_configuration():
         "response_types_supported": ["code"],
         "subject_types_supported": ["public"],
         "id_token_signing_alg_values_supported": ["RS256"],
-        "scopes_supported": ["openid", "profile"],
+        "scopes_supported": ["openid", "profile", "email"],
         "token_endpoint_auth_methods_supported": [
             "client_secret_post",
             "client_secret_basic",
@@ -64,6 +64,7 @@ async def openid_configuration():
         "claims_supported": [
             "sub", "iss", "aud", "exp", "iat", "nonce",
             "name", "preferred_username", "org_id",
+            "email", "email_verified",
         ],
         "grant_types_supported": ["authorization_code"],
     }
@@ -350,6 +351,14 @@ async def oidc_token(
     }
 
 
+def _build_email(nt_account: str) -> str:
+    """以 nt_account + COMPANY_EMAIL_DOMAIN 組合 email（未設定域名時回傳空字串）。"""
+    domain = get_settings().COMPANY_EMAIL_DOMAIN.strip().lstrip("@")
+    if not domain or not nt_account:
+        return ""
+    return f"{nt_account}@{domain}"
+
+
 def _create_id_token(
     sub: str, aud: str, nonce: str, org_id: str, expire_hours: int
 ) -> str:
@@ -369,6 +378,11 @@ def _create_id_token(
         "preferred_username": sub,
         "org_id": org_id,
     }
+    # email claim（Langfuse、Grafana 等 OIDC client 以 email 作為使用者唯一識別）
+    email = _build_email(sub)
+    if email:
+        payload["email"] = email
+        payload["email_verified"] = True
     if nonce:
         payload["nonce"] = nonce
 
@@ -394,9 +408,14 @@ async def oidc_userinfo(request: Request):
     except Exception:
         return JSONResponse({"error": "invalid_token"}, status_code=401)
 
-    return {
+    claims = {
         "sub": payload["sub"],
         "name": payload["sub"],
         "preferred_username": payload["sub"],
         "org_id": payload.get("org_id", ""),
     }
+    email = _build_email(payload["sub"])
+    if email:
+        claims["email"] = email
+        claims["email_verified"] = True
+    return claims
