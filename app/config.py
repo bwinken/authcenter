@@ -41,6 +41,10 @@ class Settings:
     # Teams Webhook
     TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
 
+    # 公司 Email 域名（nt_account → email，如 kane.beh@company.com）
+    # 用於 Teams 通知與 OIDC id_token / userinfo 的 email claim
+    COMPANY_EMAIL_DOMAIN: str = os.getenv("COMPANY_EMAIL_DOMAIN", "")
+
     # HTTP Proxy (for outbound requests like Teams Webhook)
     HTTP_PROXY: str = os.getenv("HTTP_PROXY", "")
 
