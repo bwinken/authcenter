@@ -224,7 +224,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Auth Center",
     description="Central SSO authentication service for internal AI applications.",
-    version="1.0.0",
+    version="0.1.0",
     lifespan=lifespan,
 )
 
