@@ -4,6 +4,8 @@
 
 > 📄 **[Auth Center SSO Guide (PDF)](docs/Auth_Center_SSO_Guide.pdf)** — 完整簡報，適合快速了解系統架構與流程
 
+> 🏷️ **目前版本：v0.1.0** — 支援範圍與已知限制請見 [CHANGELOG.md](CHANGELOG.md)
+
 ---
 
 ## 目錄
@@ -27,6 +29,7 @@
 15. [安全機制](#15-安全機制)
 16. [安全測試](#16-安全測試)
 17. [專案結構](#17-專案結構)
+18. [版本與支援範圍](#18-版本與支援範圍)
 
 ---
 
@@ -1884,3 +1887,42 @@ auth-center/
 ├── requirements.txt        # 依賴清單（向下相容）
 └── .env.example
 ```
+---
+
+## 18. 版本與支援範圍
+
+**目前版本：v0.1.0**（首次發布）
+
+完整的功能清單、已知限制與升級注意事項請見 **[CHANGELOG.md](CHANGELOG.md)**。以下為重點摘要。
+
+### 本版支援
+
+| 面向 | 支援內容 |
+|------|----------|
+| **認證協定** | OAuth2 Authorization Code Flow（`/auth/*`）＋ 標準 OIDC（Discovery / JWKS / Authorize / Token / UserInfo） |
+| **Grant / Response Type** | `authorization_code` / `code` |
+| **Client 認證** | `client_secret_post`、`client_secret_basic`（bcrypt 雜湊儲存於 `apps.yaml`） |
+| **Token** | RS256 JWT（含 `kid`），每個 App 可自訂 `token_expire_hours`（預設 12 小時）；Admin Token 2 小時 |
+| **Scopes / Claims** | `openid`、`profile`、`email`；`sub`、`iss`、`aud`、`exp`、`iat`、`nonce`、`name`、`preferred_username`、`org_id`、`email`、`email_verified` |
+| **權限** | Per-User-Per-App Level 0–3 自動映射 scopes；`allowed_orgs` 組織限制；`default_level` 組織預設（僅 1、2）；個人權限覆寫組織限制 |
+| **管理** | Super Admin / App Admin 兩層後台、App CRUD、權限與會員管理、存取紀錄、稽核紀錄 |
+| **使用者** | 登入、Dashboard、註冊（邀請連結或申請審核）、修改密碼、忘記密碼重設 |
+| **資料來源** | MSSQL 員工主檔（唯讀，ODBC Driver 17）＋ SQLite 本地認證資料（WAL） |
+| **通知** | Teams Webhook（管理員 Channel）＋ Power Automate 使用者 1:1 Chat（可選） |
+| **部署** | Python 3.11+、`fastapi run`、Docker / docker-compose、systemd + nginx 一鍵腳本、`/health` 探針、Preflight Check |
+
+### 本版尚未支援
+
+| 項目 | 說明 |
+|------|------|
+| **PKCE（RFC 7636）** | 僅支援 confidential client；不支援 SPA／行動 App 的公開客戶端流程 |
+| **Refresh Token** | 無 refresh flow；Token 過期需重新登入（OAuth2 Proxy 請設 `OAUTH2_PROXY_COOKIE_REFRESH`） |
+| **RP-Initiated Logout** | 無 `end_session_endpoint` 與 Front/Back-Channel Logout |
+| **Dynamic Client Registration** | App 需由管理員於 `config/apps.yaml`／Admin 後台註冊 |
+| **MFA / 2FA** | 尚未支援 |
+| **AD / LDAP 直接認證** | 密碼由本地 SQLite 以 bcrypt 保管，MSSQL 僅唯讀比對員工身分 |
+| **其他員工資料來源** | 員工主檔目前僅支援 MSSQL |
+| **DB Migration 工具** | 無 Alembic；表結構於啟動時建立，欄位變更需手動處理 |
+| **單元測試** | 尚無 pytest 套件，僅有整合式 `example_app/security_tests.py` |
+| **多實例水平擴展** | Rate limiting 為單 process 記憶體計算；SQLite 需共用檔案儲存 |
+| **介面語言** | UI 僅提供繁體中文 |
