@@ -21,3 +21,4 @@ uv.lock
 .dockerignore
 CLAUDE.md
 README.md
+backups/

@@ -18,12 +18,12 @@ async def _post_webhook(url: str, payload: dict) -> bool:
         async with httpx.AsyncClient(timeout=10, proxy=proxy, verify=False) as client:
             resp = await client.post(url, json=payload)
             if resp.is_success:
-                logger.info("Webhook 發送成功: %s", url[:60])
+                logger.info("Webhook 發送成功: {}", url[:60])
             else:
-                logger.error("Webhook 失敗: url=%s status=%d body=%s", url[:60], resp.status_code, resp.text[:200])
+                logger.error("Webhook 失敗: url={} status={} body={}", url[:60], resp.status_code, resp.text[:200])
             return resp.is_success
     except Exception:
-        logger.exception("Webhook 發送異常: %s", url[:60])
+        logger.exception("Webhook 發送異常: {}", url[:60])
         return False
 
 
@@ -95,3 +95,53 @@ async def send_registration_request_notification(staff: StaffInfo, app_name: str
     )
 
 
+# ─── Auto Mail Status（自動寄信結果回報）──────────────────────
+
+
+def _mail_result(sent: bool, error: str) -> str:
+    return "✅ 已寄出" if sent else f"❌ 寄送失敗：{error}"
+
+
+async def send_register_mail_status(
+    staff: StaffInfo, app_name: str, email: str, sent: bool, error: str = "",
+) -> bool:
+    """回報註冊連結自動寄送結果到管理員 Channel（不含連結本身）。"""
+    if sent:
+        title = "📧 已自動寄送註冊連結"
+        subtitle = "員工申請註冊，系統已將註冊連結寄到員工信箱，管理員無需處理。"
+    else:
+        title = "⚠️ 註冊連結自動寄送失敗"
+        subtitle = "請至管理後台 Dashboard 的「待處理的註冊請求」手動產生註冊連結，並轉交給員工。"
+    return await _send_adaptive_card(
+        title=title,
+        subtitle=subtitle,
+        facts=[
+            {"title": "使用者名稱", "value": staff.employee_name},
+            {"title": "組織代碼", "value": staff.org_id},
+            {"title": "欲存取的 App", "value": app_name},
+            {"title": "收件信箱", "value": email},
+            {"title": "寄送結果", "value": _mail_result(sent, error)},
+        ],
+    )
+
+
+async def send_reset_mail_status(
+    staff: StaffInfo, email: str, sent: bool, error: str = "",
+) -> bool:
+    """回報密碼重設連結自動寄送結果到管理員 Channel（不含連結本身）。"""
+    if sent:
+        title = "📧 已自動寄送密碼重設連結"
+        subtitle = "員工申請重設密碼，系統已將重設連結寄到員工信箱，管理員無需處理。"
+    else:
+        title = "⚠️ 密碼重設連結自動寄送失敗"
+        subtitle = "請至管理後台「會員管理」手動產生重設連結，並轉交給員工。"
+    return await _send_adaptive_card(
+        title=title,
+        subtitle=subtitle,
+        facts=[
+            {"title": "使用者名稱", "value": staff.employee_name},
+            {"title": "組織代碼", "value": staff.org_id},
+            {"title": "收件信箱", "value": email},
+            {"title": "寄送結果", "value": _mail_result(sent, error)},
+        ],
+    )

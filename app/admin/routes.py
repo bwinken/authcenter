@@ -335,10 +335,10 @@ async def admin_dashboard(
         result = await sqlite_session.execute(
             text(
                 "SELECT token FROM registration_tokens "
-                "WHERE employee_name = :ename AND expires_at > :now "
+                "WHERE employee_name = :ename AND purpose = :purpose AND expires_at > :now "
                 "ORDER BY expires_at DESC LIMIT 1"
             ),
-            {"ename": employee_name, "now": time.time()},
+            {"ename": employee_name, "purpose": service.TOKEN_PURPOSE_REGISTER, "now": time.time()},
         )
         row = result.fetchone()
         if row:
@@ -376,7 +376,8 @@ async def generate_register_link(
     )
     await sqlite_session.commit()
     token = await service.generate_registration_token(
-        sqlite_session, employee_name, app_id="", redirect_uri="", ttl=86400
+        sqlite_session, employee_name, app_id="", redirect_uri="",
+        ttl=service.REGISTER_LINK_TTL, purpose=service.TOKEN_PURPOSE_REGISTER,
     )
     link = f"{settings.AUTH_CENTER_BASE_URL}/auth/register?token={token}"
 

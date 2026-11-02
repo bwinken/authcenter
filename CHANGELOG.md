@@ -4,6 +4,33 @@
 
 ---
 
+## [Unreleased]
+
+### 新增
+
+- **自動寄送註冊／重設連結**：設定 `EXCHANGE_SERVER`、`EXCHANGE_USER`、`EXCHANGE_PASSWORD`、`EXCHANGE_EMAIL` 與 `COMPANY_EMAIL_DOMAIN` 後，
+  員工「申請註冊」或「忘記密碼」時，系統透過 Exchange（EWS + NTLM）把一次性連結寄到 `<nt_account>@<COMPANY_EMAIL_DOMAIN>`，
+  並將寄送結果（成功／失敗＋錯誤摘要，不含連結）發到 Teams 管理員 Channel。未設定時維持原本的管理員手動流程。
+- 同一員工同類型連結 5 分鐘內只寄一次；重新寄送後舊連結自動失效。
+- Dashboard「待處理的註冊請求」標示已有有效註冊連結的員工（「已產生連結」）。
+- `scripts/backup_sqlite.py`：服務運行中也能安全備份 SQLite（Online Backup API、integrity check、`--keep` 保留份數）。
+- `scripts/preflight_check.py` 新增 Step 9（Exchange 連線檢查）與 `--test-mail` 寄送測試信。
+
+### 安全性
+
+- 修正：登入頁／預註冊頁「尚未註冊」畫面中的 registration token 可直接用於 `/auth/register` 設定密碼，
+  任何人輸入未註冊員工的名稱即可替對方建立帳號。`registration_tokens` 新增 `purpose` 欄位，
+  頁面上的 `request` token 只能送出申請；只有寄到信箱、管理員或 CLI 產生的 `register` 連結才能設定密碼。
+
+### 升級注意
+
+- 啟動時自動執行 migration：`registration_tokens` 新增 `purpose` 欄位（只加欄位，不改動其他資料）。
+  既有 token 一律視為 `request`，**升級前已產生但尚未使用的註冊連結需重新產生**。
+- 新增依賴 `exchangelib`（`uv sync` 或 `pip install -r requirements.txt`）。
+- 建議升級前先執行 `python scripts/backup_sqlite.py` 備份資料庫。
+
+---
+
 ## [v0.1.0] — 2026-08-26
 
 Auth Center 首次正式發布。為內部 AI App 提供統一的單一登入（SSO）服務，同時支援

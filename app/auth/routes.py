@@ -18,6 +18,8 @@ from app.auth.jwt_handler import create_token, verify_token
 from app.schemas import TokenRequest, ForgotPasswordRequest
 from loguru import logger
 from app.webhook.teams import send_forgot_password_notification, send_registration_request_notification
+from app.mail.exchange import is_mail_enabled
+from app.mail.links import mail_register_link, mail_reset_link
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 templates: Jinja2Templates | None = None
@@ -237,7 +239,7 @@ async def pre_register_submit(
     })
 
 
-# ─── Registration Request (webhook notification) ─────────────
+# ─── Registration Request (auto mail / webhook notification) ─
 
 @router.post("/request-register")
 async def request_register_submit(
@@ -246,15 +248,17 @@ async def request_register_submit(
     mssql_session: AsyncSession = Depends(get_mssql_session),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """處理註冊申請：直接發送 Teams Webhook 通知管理員。
+    """處理註冊申請。
 
     驗證流程：
-    1. 驗證 registration token 有效
+    1. 驗證 registration token 有效（用途須為 request）
     2. 查 MSSQL 取得員工資料
-    3. 發送 Teams Webhook 通知管理員
-    4. Webhook 成功後作廢 token
+    3. 已設定 Exchange：自動將註冊連結寄到員工信箱，並將寄送結果通知管理員 Channel
+       未設定 Exchange：發送 Teams Webhook 通知管理員手動產生註冊連結
     """
-    data = await service.consume_registration_token(sqlite_session, token)
+    data = await service.consume_registration_token(
+        sqlite_session, token, purpose=service.TOKEN_PURPOSE_REQUEST
+    )
     if data is None:
         return templates.TemplateResponse("not_registered.html", {
             "request": request,
@@ -289,16 +293,8 @@ async def request_register_submit(
     if app_info:
         app_name = app_info.get("name", app_name)
 
-    # Extend token TTL to 24 hours so admin can see it on Dashboard
-    await service.extend_registration_token(sqlite_session, token, ttl=86400)
-
-    # Send webhook notification to admin (best-effort, admin can also check Dashboard)
-    sent = await send_registration_request_notification(staff, app_name)
-    if not sent:
-        logger.warning("Webhook 發送失敗，但註冊請求已保留在 Dashboard: %s", employee_name)
-
     settings = get_settings()
-    return templates.TemplateResponse("not_registered.html", {
+    ctx = {
         "request": request,
         "employee_name": employee_name,
         "token": "",
@@ -306,7 +302,24 @@ async def request_register_submit(
         "success": True,
         "error": None,
         "super_admins": settings.SUPER_ADMIN_EMPLOYEES,
-    })
+    }
+
+    if is_mail_enabled():
+        ctx.update(await mail_register_link(
+            sqlite_session, staff, employee_name, token, app_id, redirect_uri, app_name,
+        ))
+        return templates.TemplateResponse("not_registered.html", ctx)
+
+    # 未設定 Exchange：由管理員在 Dashboard 手動產生註冊連結
+    # Extend token TTL to 24 hours so admin can see it on Dashboard
+    await service.extend_registration_token(sqlite_session, token, ttl=86400)
+
+    # Send webhook notification to admin (best-effort, admin can also check Dashboard)
+    sent = await send_registration_request_notification(staff, app_name)
+    if not sent:
+        logger.warning("Webhook 發送失敗，但註冊請求已保留在 Dashboard: {}", employee_name)
+
+    return templates.TemplateResponse("not_registered.html", ctx)
 
 
 # ─── Register Page (admin-generated link) ────────────────────
@@ -319,10 +332,13 @@ async def register_page(
 ):
     """渲染註冊頁面（設定初始密碼）。
 
-    管理員核對身份後產生此連結（含 registration token），發送至員工信箱。
+    連結由系統自動寄到員工信箱，或由管理員核對身份後產生（含 registration token）。
+    只接受用途為 register 的 token；登入頁產生的 request token 不能用來設定密碼。
     Token 有效期 24 小時。
     """
-    data = await service.consume_registration_token(sqlite_session, token)
+    data = await service.consume_registration_token(
+        sqlite_session, token, purpose=service.TOKEN_PURPOSE_REGISTER
+    )
     if data is None:
         return templates.TemplateResponse("register.html", {
             "request": request,
@@ -361,7 +377,9 @@ async def register_submit(
     5. 導回登入頁繼續 OAuth 流程
     """
     # Validate registration token
-    data = await service.consume_registration_token(sqlite_session, token)
+    data = await service.consume_registration_token(
+        sqlite_session, token, purpose=service.TOKEN_PURPOSE_REGISTER
+    )
     if data is None:
         return templates.TemplateResponse("register.html", {
             "request": request,
@@ -755,8 +773,8 @@ async def dashboard_login(
 async def forgot_password_page(request: Request):
     """渲染忘記密碼頁面。
 
-    提供表單讓員工輸入姓名，送出後系統將透過 Microsoft Teams
-    Webhook 通知管理員協助重設密碼（不會自動重設）。
+    提供表單讓員工輸入姓名。已設定 Exchange 時，送出後自動將重設連結寄到員工信箱；
+    否則透過 Microsoft Teams Webhook 通知管理員協助重設密碼。
     """
     return templates.TemplateResponse("forgot_password.html", {
         "request": request,
@@ -774,8 +792,10 @@ async def forgot_password_submit(
 ):
     """處理忘記密碼請求（含頻率限制）。
 
-    查詢 MSSQL 確認員工存在後，發送 Microsoft Teams Webhook
-    通知管理員。不會自動重設密碼，需由管理員手動處理。
+    查詢 MSSQL 確認員工存在且已註冊後：
+    - 已設定 Exchange：自動將重設連結寄到員工信箱，並將寄送結果通知管理員 Channel
+    - 未設定 Exchange：發送 Microsoft Teams Webhook 通知管理員手動處理
+    兩種方式都不會直接變更密碼，需由員工透過重設連結自行設定。
     """
     employee_name = service.normalize_employee_name(employee_name)
     ctx = {"request": request, "error": None, "success": False}
@@ -798,9 +818,12 @@ async def forgot_password_submit(
         ctx["error"] = "此員工尚未註冊 AuthCenter 帳號，請先完成註冊。"
         return templates.TemplateResponse("forgot_password.html", ctx)
 
-    await send_forgot_password_notification(staff)
-
     ctx["success"] = True
+    if is_mail_enabled():
+        ctx.update(await mail_reset_link(sqlite_session, staff, employee_name))
+        return templates.TemplateResponse("forgot_password.html", ctx)
+
+    await send_forgot_password_notification(staff)
     return templates.TemplateResponse("forgot_password.html", ctx)
 
 

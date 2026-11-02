@@ -20,6 +20,7 @@ from app.oidc.routes import router as oidc_router, init_templates as oidc_init_t
 from app.auth.service import cleanup_expired_tokens, cleanup_rate_limit_store
 from app.config import load_registered_apps
 from app.csrf import CSRFMiddleware, csrf_input
+from app.mail.exchange import is_mail_enabled
 
 
 # ─── Loguru Setup ─────────────────────────────────────────────
@@ -120,6 +121,14 @@ async def lifespan(app: FastAPI):
                 expires_at REAL         NOT NULL
             )
         """))
+        # Migration: token 用途（request=僅能送出註冊申請，register=可設定密碼）
+        # 既有 token 一律視為 request，升級前產生、尚未使用的註冊連結需重新產生
+        try:
+            await conn.execute(text(
+                "ALTER TABLE registration_tokens ADD COLUMN purpose VARCHAR(16) NOT NULL DEFAULT 'request'"
+            ))
+        except Exception:
+            pass  # Column already exists
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS password_reset_tokens (
                 token         VARCHAR(64)  PRIMARY KEY,
@@ -257,6 +266,7 @@ app.add_middleware(CSRFMiddleware)
 templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
 templates.env.globals["csrf_input"] = csrf_input
+templates.env.globals["mail_enabled"] = is_mail_enabled
 init_templates(templates)
 oidc_init_templates(templates)
 

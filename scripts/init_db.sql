@@ -19,7 +19,9 @@ CREATE TABLE IF NOT EXISTS registration_tokens (
     employee_name VARCHAR(50)  NOT NULL,
     app_id        VARCHAR(100) DEFAULT '',
     redirect_uri  TEXT         DEFAULT '',
-    expires_at    REAL         NOT NULL
+    expires_at    REAL         NOT NULL,
+    -- request：登入頁產生，只能送出註冊申請；register：寄到信箱或管理員產生的連結，才能設定密碼
+    purpose       VARCHAR(16)  NOT NULL DEFAULT 'request'
 );
 
 CREATE TABLE IF NOT EXISTS user_app_permissions (

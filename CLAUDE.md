@@ -23,10 +23,12 @@ python scripts/manage_permissions.py revoke <user> <app_id>
 python scripts/manage_permissions.py list [--user <user>] [--app <app_id>]
 python scripts/generate_register_link.py <employee_name>
 python scripts/reset_password.py <employee_name> [--password <new_pw>]
+python scripts/backup_sqlite.py [--db <path>] [--output <dir|file>] [--keep N]   # online backup, safe while running
 
 # Preflight check (verify deployment environment)
 python scripts/preflight_check.py
 python scripts/preflight_check.py --test-user <employee_name>
+python scripts/preflight_check.py --test-mail <address>   # send a real test mail via Exchange
 ```
 
 No test suite exists yet.
@@ -57,6 +59,12 @@ Each user must have an explicit entry in `user_app_permissions` to access an app
 
 Granting Level 3 permission automatically assigns the user as App Admin (`auto_assigned=1`). Downgrading or revoking removes the auto-assigned entry but preserves manually assigned App Admin status. The `app_admins` table has an `auto_assigned` BOOLEAN column to distinguish.
 
+### Auto Mail (Exchange EWS)
+
+When `EXCHANGE_SERVER`/`EXCHANGE_USER`/`EXCHANGE_PASSWORD`/`EXCHANGE_EMAIL` and `COMPANY_EMAIL_DOMAIN` are all set, `POST /auth/request-register` and `POST /auth/forgot-password` email a one-time link to `<nt_account>@<COMPANY_EMAIL_DOMAIN>` (`app/mail/links.py`) and post the delivery result (never the link) to the Teams webhook. Otherwise they fall back to the original "notify admin" Teams cards. `app/mail/exchange.py` wraps sync exchangelib (NTLM) in `asyncio.to_thread` and imports it lazily so a missing package can't break login. Per-employee 5-minute in-memory cooldown (`service.mail_cooldown_remaining`). On send failure the undelivered token is deleted so the admin can generate one manually.
+
+`registration_tokens.purpose` separates `request` tokens (embedded in the not-registered page, anyone who types an employee name gets one — only valid for `/auth/request-register`) from `register` tokens (emailed / admin / CLI links — the only ones `/auth/register` accepts). Always pass `purpose=` to `consume_registration_token`.
+
 ### Two-Tier Admin
 
 Super Admin supports two login methods: (1) `.env` fixed credentials (`ADMIN_USERNAME`/`ADMIN_PASSWORD`), verified with `hmac.compare_digest`; (2) employees listed in `SUPER_ADMIN_EMPLOYEES` env var (comma-separated), who authenticate with their normal password. App Admin is an employee assigned via `app_admins` table (manually or auto-assigned from Level 3) — authenticates with their normal password, then checked against the table. App Admin can edit their app's settings (allowed_orgs, default_level, token_expire_hours) but cannot create/delete apps. Both get a separate `admin_token` cookie (JWT with `aud="auth-center-admin"`, 2h TTL). Admin routes use `_verify_admin_cookie()` and `_require_super()` guards.
@@ -68,7 +76,9 @@ Super Admin supports two login methods: (1) `.env` fixed credentials (`ADMIN_USE
 - **Auth code consumption**: Atomic `DELETE ... RETURNING` to prevent double-spend
 - **Background cleanup**: Hourly asyncio task in lifespan clears expired tokens
 - **App access logging**: `app_access_log` table records each token exchange (user, app, IP, timestamp)
-- **Templates**: Jinja2 initialized in `main.py`, passed to routers via `init_templates()`
+- **Templates**: Jinja2 initialized in `main.py`, passed to routers via `init_templates()`; `mail_enabled()` is a template global. Email templates live in `app/templates/email/`
+- **Logging**: loguru formats with `{}` placeholders — `%s` is NOT substituted (some older log calls still use `%s`)
+- **SQLite backups**: use `scripts/backup_sqlite.py` (Online Backup API); never `cp` the live `.db` (WAL data would be missing). Restore requires deleting stale `-wal`/`-shm`
 
 ## Conventions
 

@@ -16,6 +16,7 @@ config/apps.yaml
 # Database
 *.db
 data/
+backups/
 
 # ODBC offline install packages
 odbc-offline/

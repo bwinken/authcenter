@@ -25,7 +25,7 @@ python scripts/manage_permissions.py list --app <app_id>
 
 ### generate_register_link.py — 產生員工註冊連結
 
-為尚未註冊的員工產生一次性註冊連結（24 小時有效），由管理員將連結發送給員工。
+為尚未註冊的員工產生一次性註冊連結（24 小時有效），由管理員將連結發送給員工。已設定 Exchange 自動寄信時，員工申請註冊會自動收到連結，此工具用於寄送失敗等例外情況。
 
 ```bash
 python scripts/generate_register_link.py <employee_name>
@@ -44,6 +44,23 @@ python scripts/reset_password.py <employee_name>
 python scripts/reset_password.py <employee_name> --password <new_password>
 ```
 
+### backup_sqlite.py — 線上備份 SQLite
+
+使用 SQLite Online Backup API 備份，服務運行中也能取得一致的快照（不需停機），WAL 中尚未寫回主檔的資料也會一併備份。備份檔會通過 `integrity_check` 才保留，權限設為 600。
+
+```bash
+# 備份 .env 的 SQLITE_PATH 到 backups/（檔名自動加時間戳記）
+python scripts/backup_sqlite.py
+
+# 指定來源與輸出目錄，只保留最新 14 份
+python scripts/backup_sqlite.py --db data/auth_local.db --output /mnt/backup/ --keep 14
+
+# 指定輸出檔名
+python scripts/backup_sqlite.py --output backups/before-upgrade.db
+```
+
+還原時必須先停止服務，覆蓋 `.db` 後刪除舊的 `-wal`、`-shm` 檔再啟動（指令見腳本開頭說明）。
+
 ### preflight_check.py — 部署前環境檢查
 
 逐步驗證部署環境是否正確設定，包含：
@@ -56,10 +73,12 @@ python scripts/reset_password.py <employee_name> --password <new_password>
 6. `apps.yaml` App 註冊
 7. Super Admin 設定
 8. Teams Webhook（可選）
+9. Exchange 自動寄信（可選）
 
 ```bash
 python scripts/preflight_check.py
 python scripts/preflight_check.py --test-user <employee_name>
+python scripts/preflight_check.py --test-mail <email>   # 透過 Exchange 寄一封測試信
 ```
 
 ## 資料庫 Schema

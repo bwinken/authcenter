@@ -42,6 +42,9 @@ def cleanup_rate_limit_store() -> None:
     stale = [ip for ip, ts in _rate_limit_store.items() if all(now - t >= RATE_LIMIT_WINDOW for t in ts)]
     for ip in stale:
         del _rate_limit_store[ip]
+    expired = [k for k, sent_at in _mail_sent_at.items() if now - sent_at >= MAIL_COOLDOWN_SECONDS]
+    for k in expired:
+        del _mail_sent_at[k]
 
 
 def normalize_employee_name(name: str) -> str:
@@ -67,8 +70,15 @@ def validate_password(password: str, employee_name: str = "") -> str:
 
 
 # ─── Registration Tokens (SQLite-backed) ─────────────────────
-REGISTRATION_TOKEN_TTL = 86400         # 24 hours (login → register-request flow)
-ADMIN_REGISTRATION_TOKEN_TTL = 86400   # 24 hours (admin-generated link)
+REGISTRATION_TOKEN_TTL = 86400   # 24 hours (login → register-request flow)
+REGISTER_LINK_TTL = 86400        # 24 hours (emailed / admin-generated register link)
+
+# Token 用途：
+# - request：登入／預註冊頁面產生，嵌在頁面表單中，只能用來送出註冊申請
+# - register：寄到員工信箱或由管理員產生的註冊連結，才能設定密碼
+# 頁面上的 token 任何人輸入員工名稱即可取得，因此不能用來設定密碼。
+TOKEN_PURPOSE_REQUEST = "request"
+TOKEN_PURPOSE_REGISTER = "register"
 
 
 async def generate_registration_token(
@@ -77,6 +87,7 @@ async def generate_registration_token(
     app_id: str,
     redirect_uri: str,
     ttl: int = REGISTRATION_TOKEN_TTL,
+    purpose: str = TOKEN_PURPOSE_REQUEST,
 ) -> str:
     """Generate a short-lived token stored in SQLite."""
     employee_name = normalize_employee_name(employee_name)
@@ -84,31 +95,48 @@ async def generate_registration_token(
     expires_at = time.time() + ttl
     await sqlite_session.execute(
         text(
-            "INSERT INTO registration_tokens (token, employee_name, app_id, redirect_uri, expires_at) "
-            "VALUES (:token, :ename, :aid, :uri, :exp)"
+            "INSERT INTO registration_tokens (token, employee_name, app_id, redirect_uri, expires_at, purpose) "
+            "VALUES (:token, :ename, :aid, :uri, :exp, :purpose)"
         ),
-        {"token": token, "ename": employee_name, "aid": app_id, "uri": redirect_uri, "exp": expires_at},
+        {
+            "token": token, "ename": employee_name, "aid": app_id, "uri": redirect_uri,
+            "exp": expires_at, "purpose": purpose,
+        },
     )
     await sqlite_session.commit()
-    logger.info("Registration token generated for %s (ttl=%ds)", employee_name, ttl)
+    logger.info("Registration token generated for {} (purpose={}, ttl={}s)", employee_name, purpose, ttl)
     return token
 
 
 async def consume_registration_token(
-    sqlite_session: AsyncSession, token: str
+    sqlite_session: AsyncSession, token: str, *, purpose: str
 ) -> dict | None:
-    """Validate and return registration token data. Does NOT delete (allows form resubmit)."""
+    """Validate and return registration token data. Does NOT delete (allows form resubmit).
+
+    Token 用途必須與 *purpose* 相符，否則視為無效。
+    """
     result = await sqlite_session.execute(
         text(
             "SELECT employee_name, app_id, redirect_uri, expires_at "
-            "FROM registration_tokens WHERE token = :token"
+            "FROM registration_tokens WHERE token = :token AND purpose = :purpose"
         ),
-        {"token": token},
+        {"token": token, "purpose": purpose},
     )
     row = result.fetchone()
     if row is None or time.time() > row[3]:
         return None
     return {"employee_name": row[0], "app_id": row[1], "redirect_uri": row[2]}
+
+
+async def delete_other_registration_tokens(
+    sqlite_session: AsyncSession, employee_name: str, keep_token: str
+) -> None:
+    """刪除該員工除了 *keep_token* 以外的所有 registration tokens（讓最新寄出的連結成為唯一有效連結）。"""
+    await sqlite_session.execute(
+        text("DELETE FROM registration_tokens WHERE employee_name = :ename AND token != :keep"),
+        {"ename": normalize_employee_name(employee_name), "keep": keep_token},
+    )
+    await sqlite_session.commit()
 
 
 async def invalidate_registration_token(
@@ -185,6 +213,46 @@ async def invalidate_password_reset_token(
         {"token": token},
     )
     await sqlite_session.commit()
+
+
+async def delete_other_password_reset_tokens(
+    sqlite_session: AsyncSession, employee_name: str, keep_token: str
+) -> None:
+    """刪除該員工除了 *keep_token* 以外的所有 reset tokens（讓最新寄出的連結成為唯一有效連結）。"""
+    await sqlite_session.execute(
+        text("DELETE FROM password_reset_tokens WHERE employee_name = :ename AND token != :keep"),
+        {"ename": normalize_employee_name(employee_name), "keep": keep_token},
+    )
+    await sqlite_session.commit()
+
+
+# ─── Staff Email ─────────────────────────────────────────────
+
+def build_staff_email(nt_account: str) -> str:
+    """以 nt_account + COMPANY_EMAIL_DOMAIN 組合 email（未設定域名時回傳空字串）。"""
+    domain = get_settings().COMPANY_EMAIL_DOMAIN.strip().lstrip("@")
+    if not domain or not nt_account:
+        return ""
+    return f"{nt_account}@{domain}"
+
+
+# ─── Mail Cooldown（防止同一員工信箱被重複寄信）─────────────
+# 與 rate limit 相同為 in-memory，多 worker 時各自計算。
+MAIL_COOLDOWN_SECONDS = 300  # 同一員工同類型連結 5 分鐘內只寄一次
+_mail_sent_at: dict[str, float] = {}
+
+
+def mail_cooldown_remaining(key: str) -> int:
+    """回傳距離可再次寄信的剩餘秒數（0 = 可以寄送）。key 例如 "register:kane.beh"。"""
+    sent_at = _mail_sent_at.get(key)
+    if sent_at is None:
+        return 0
+    return max(0, int(sent_at + MAIL_COOLDOWN_SECONDS - time.time()))
+
+
+def record_mail_sent(key: str) -> None:
+    """記錄寄信成功時間，開始冷卻。"""
+    _mail_sent_at[key] = time.time()
 
 
 # ─── Level → Scopes Mapping ─────────────────────────────────
@@ -693,7 +761,7 @@ async def get_pending_registrations(sqlite_session: AsyncSession) -> list[dict]:
     """查詢所有未過期的 registration_tokens（待處理的註冊請求）。"""
     result = await sqlite_session.execute(
         text(
-            "SELECT employee_name, app_id, redirect_uri, expires_at "
+            "SELECT employee_name, app_id, redirect_uri, expires_at, purpose "
             "FROM registration_tokens WHERE expires_at > :now "
             "ORDER BY expires_at DESC"
         ),
@@ -705,6 +773,7 @@ async def get_pending_registrations(sqlite_session: AsyncSession) -> list[dict]:
             "app_id": r[1],
             "redirect_uri": r[2],
             "expires_at": r[3],
+            "purpose": r[4],
         }
         for r in result.fetchall()
     ]
