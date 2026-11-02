@@ -35,7 +35,7 @@
         <div class="alert alert-info">
             <strong>{{ employee_name }}</strong> 您好，您尚未建立 AuthCenter 帳號。
         </div>
-        {% if mail_enabled() %}
+        {% if mail_enabled is defined and mail_enabled() %}
             <p class="subtitle">點擊下方按鈕申請註冊，系統會將註冊連結寄到您的公司信箱。</p>
         {% else %}
             <p class="subtitle">點擊下方按鈕申請註冊，系統將通知管理員為您建立帳號。</p>
