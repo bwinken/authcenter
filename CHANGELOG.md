@@ -27,6 +27,7 @@
 - 啟動時自動執行 migration：`registration_tokens` 新增 `purpose` 欄位（只加欄位，不改動其他資料）。
   既有 token 一律視為 `request`，**升級前已產生但尚未使用的註冊連結需重新產生**。
 - 新增依賴 `exchangelib`（`uv sync` 或 `pip install -r requirements.txt`）。
+- `deploy/setup.sh` 改為讓 uv 使用系統憑證，避免公司網路的 SSL 檢查導致 `uv sync` 出現 `invalid peer certificate: UnknownIssuer`。
 - 建議升級前先執行 `python scripts/backup_sqlite.py` 備份資料庫。
 
 ---
