@@ -79,6 +79,7 @@ python scripts/backup_sqlite.py --output backups/before-upgrade.db
 python scripts/preflight_check.py
 python scripts/preflight_check.py --test-user <employee_name>
 python scripts/preflight_check.py --test-mail <email>   # 透過 Exchange 寄一封測試信
+python scripts/preflight_check.py --test-webhook        # 實際發送一則 Teams 測試通知
 ```
 
 ## 資料庫 Schema

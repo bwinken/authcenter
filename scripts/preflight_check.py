@@ -15,6 +15,7 @@ Usage:
     python scripts/preflight_check.py
     python scripts/preflight_check.py --test-user kane.beh   # 額外測試查詢特定員工
     python scripts/preflight_check.py --test-mail kane.beh@company.com   # 額外寄一封測試信
+    python scripts/preflight_check.py --test-webhook   # 額外發送一則 Teams 測試通知
 """
 
 import argparse
@@ -22,6 +23,7 @@ import asyncio
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 # 確保專案根目錄在 sys.path
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -315,8 +317,17 @@ def check_admin(settings) -> None:
         record("Admin 帳密已設定", False, "請在 .env 設定 ADMIN_USERNAME 和 ADMIN_PASSWORD")
 
 
-async def check_webhook(settings) -> None:
-    """Step 8: 測試 Teams Webhook（可選）。"""
+# Teams Webhook 常見網域
+TEAMS_WEBHOOK_DOMAINS = (
+    "webhook.office.com",       # 舊版 Incoming Webhook（Office 365 Connector，Microsoft 已停用）
+    "webhook.microsoft.com",
+    "logic.azure.com",          # Teams Workflows（Power Automate）
+    "api.powerplatform.com",    # Teams Workflows（Power Automate 新網址格式）
+)
+
+
+async def check_webhook(settings, test_webhook: bool = False) -> None:
+    """Step 8: 檢查 Teams Webhook（可選）。"""
     print(f"\n{'='*50}")
     print(f"Step 8: Teams Webhook（可選）")
     print(f"{'='*50}")
@@ -328,11 +339,24 @@ async def check_webhook(settings) -> None:
     url = settings.TEAMS_WEBHOOK_URL
     record("Webhook URL 已設定", True, url[:60] + "...")
 
-    # 只檢查 URL 格式，不實際發送
-    if "webhook.office.com" in url or "webhook.microsoft.com" in url:
-        record("URL 格式正確", True)
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not host:
+        record("Webhook URL 格式", False, "必須是 https:// 開頭的完整網址")
+        return
+    if any(host == d or host.endswith("." + d) for d in TEAMS_WEBHOOK_DOMAINS):
+        record("Webhook URL 格式", True, host)
     else:
-        record("URL 格式正確", False, "不像是有效的 Teams Webhook URL")
+        # 只比對網域，無法確定是否有效，不列為失敗
+        print(f"  {WARN} {host} 不是常見的 Teams Webhook 網域，請加上 --test-webhook 實際發送確認")
+
+    if test_webhook:
+        from app.webhook.teams import send_test_notification
+
+        ok = await send_test_notification()
+        record("發送 Teams 測試通知", ok, "" if ok else "發送失敗，請檢查 URL 與 HTTP_PROXY（錯誤訊息見上方 log）")
+    else:
+        print(f"  {INFO} 加上 --test-webhook 可實際發送一則測試通知")
 
 
 async def check_mail(settings, test_mail: str | None) -> None:
@@ -408,6 +432,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Auth Center 部署前環境檢查")
     parser.add_argument("--test-user", help="測試查詢特定員工（e.g. kane.beh）")
     parser.add_argument("--test-mail", help="透過 Exchange 寄一封測試信到指定信箱")
+    parser.add_argument("--test-webhook", action="store_true", help="實際發送一則 Teams 測試通知")
     args = parser.parse_args()
 
     print("\n  Auth Center 環境檢查")
@@ -422,7 +447,7 @@ async def main():
     check_rsa_keys(settings)
     check_apps_yaml()
     check_admin(settings)
-    await check_webhook(settings)
+    await check_webhook(settings, args.test_webhook)
     await check_mail(settings, args.test_mail)
 
     print_summary()

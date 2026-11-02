@@ -29,6 +29,7 @@ python scripts/backup_sqlite.py [--db <path>] [--output <dir|file>] [--keep N]  
 python scripts/preflight_check.py
 python scripts/preflight_check.py --test-user <employee_name>
 python scripts/preflight_check.py --test-mail <address>   # send a real test mail via Exchange
+python scripts/preflight_check.py --test-webhook          # post a real test card to the Teams webhook
 ```
 
 No test suite exists yet.

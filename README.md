@@ -267,9 +267,14 @@ python scripts/preflight_check.py
 
 # 額外測試查詢特定員工
 python scripts/preflight_check.py --test-user kane.beh
+
+# 實際發送一則 Teams 測試通知 / 寄一封測試信
+python scripts/preflight_check.py --test-webhook --test-mail kane.beh@company.com
 ```
 
-會依序檢查 8 個項目：`.env` 環境變數 → ODBC Driver → MSSQL 連線 → SQLite 讀寫 → RSA 金鑰 → apps.yaml → Super Admin → Teams Webhook。每項顯示 `[PASS]` / `[FAIL]`，最後列出所有失敗項目及修正建議。
+會依序檢查 9 個項目：`.env` 環境變數 → ODBC Driver → MSSQL 連線 → SQLite 讀寫 → RSA 金鑰 → apps.yaml → Super Admin → Teams Webhook → Exchange 自動寄信。每項顯示 `[PASS]` / `[FAIL]`，最後列出所有失敗項目及修正建議。
+
+> Teams Webhook 預設只檢查網址格式；Teams Workflows 產生的網址（`logic.azure.com`、`api.powerplatform.com`）與舊版 Incoming Webhook（`webhook.office.com`）都能辨識。要確定能收到通知，請加上 `--test-webhook`。
 
 ### Step 6：啟動服務
 
@@ -357,7 +362,7 @@ http_proxy="http://proxy.company.local:8080" bash deploy/setup.sh
 | `SQLITE_PATH` | SQLite 檔案路徑 | `./auth_local.db` | |
 | `PRIVATE_KEY_PATH` | RS256 私鑰路徑 | `./keys/private.pem` | * |
 | `PUBLIC_KEY_PATH` | RS256 公鑰路徑 | `./keys/public.pem` | * |
-| `TEAMS_WEBHOOK_URL` | Teams 管理員 Channel Webhook URL | — | |
+| `TEAMS_WEBHOOK_URL` | Teams 管理員 Channel Webhook URL（Teams Workflows 或舊版 Incoming Webhook） | — | |
 | `COMPANY_EMAIL_DOMAIN` | 公司 Email 域名（nt_account → email，用於自動寄信收件信箱及 OIDC `email` claim） | — | |
 | `HTTP_PROXY` | HTTP Proxy（內網環境透過 Proxy 發送 Webhook） | — | |
 | `EXCHANGE_SERVER` | 自動寄信：Exchange 主機（EWS） | — | |

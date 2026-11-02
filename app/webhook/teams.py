@@ -3,6 +3,9 @@
 Sends notifications to admin channel via TEAMS_WEBHOOK_URL (Incoming Webhook).
 """
 
+import socket
+from datetime import datetime
+
 import httpx
 from loguru import logger
 
@@ -62,6 +65,18 @@ async def _send_adaptive_card(
         return False
     payload = _build_adaptive_card(title, subtitle, facts)
     return await _post_webhook(settings.TEAMS_WEBHOOK_URL, payload)
+
+
+async def send_test_notification() -> bool:
+    """發送測試通知到管理員 Channel（scripts/preflight_check.py --test-webhook 使用）。"""
+    return await _send_adaptive_card(
+        title="🔧 AuthCenter 測試通知",
+        subtitle="這是 preflight_check 發送的測試訊息，收到代表 Teams Webhook 設定正確。",
+        facts=[
+            {"title": "發送主機", "value": socket.gethostname()},
+            {"title": "發送時間", "value": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
+        ],
+    )
 
 
 # ─── Admin Channel Notifications ───────────────────────────────

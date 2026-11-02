@@ -15,6 +15,8 @@
 - Dashboard「待處理的註冊請求」標示已有有效註冊連結的員工（「已產生連結」）。
 - `scripts/backup_sqlite.py`：服務運行中也能安全備份 SQLite（Online Backup API、integrity check、`--keep` 保留份數）。
 - `scripts/preflight_check.py` 新增 Step 9（Exchange 連線檢查）與 `--test-mail` 寄送測試信。
+- `scripts/preflight_check.py` 的 Teams Webhook 檢查可辨識 Teams Workflows 網址（`logic.azure.com`、`api.powerplatform.com`），
+  不再誤判為無效；新增 `--test-webhook` 實際發送測試通知。
 
 ### 安全性
 
