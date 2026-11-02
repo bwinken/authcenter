@@ -31,6 +31,15 @@ if ! command -v uv &>/dev/null; then
     echo "uv 已安裝：$(uv --version)"
 fi
 
+# uv 預設只信任內建的憑證清單；公司網路若有 SSL 檢查（proxy 以內部 CA 重新簽憑證），
+# 必須改用系統憑證才能下載套件。新版 uv 用 UV_SYSTEM_CERTS，舊版用 UV_NATIVE_TLS。
+# 自訂 CA 檔可另外指定：SSL_CERT_FILE=/path/to/ca.pem bash deploy/setup.sh
+if uv sync --help 2>/dev/null | grep -q -- '--system-certs'; then
+    export UV_SYSTEM_CERTS="${UV_SYSTEM_CERTS:-true}"
+else
+    export UV_NATIVE_TLS="${UV_NATIVE_TLS:-true}"
+fi
+
 echo "=== 1. 部署程式碼 ==="
 mkdir -p "$APP_DIR"
 rsync -a --exclude='.git' --exclude='.venv' --exclude='__pycache__' \

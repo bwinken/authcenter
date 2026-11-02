@@ -329,6 +329,8 @@ bash deploy/setup.sh
 http_proxy="http://proxy.company.local:8080" bash deploy/setup.sh
 ```
 
+> `setup.sh` 會讓 uv 使用系統憑證，公司網路有 SSL 檢查（proxy 以內部 CA 重新簽憑證）時 `uv sync` 才能下載套件。若系統沒有安裝公司 CA，可另外指定：`SSL_CERT_FILE=/path/to/company-ca.pem bash deploy/setup.sh`
+
 啟動後：
 - 使用者登入頁面：`http://localhost:8000/auth/login?app_id=YOUR_APP_ID&redirect_uri=YOUR_REDIRECT_URI`
 - Admin 管理後台：`http://localhost:8000/admin/login`
