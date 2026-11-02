@@ -9,10 +9,12 @@
   6. apps.yaml 載入
   7. Super Admin 設定
   8. Teams Webhook（可選）
+  9. Exchange 自動寄信（可選）
 
 Usage:
     python scripts/preflight_check.py
     python scripts/preflight_check.py --test-user kane.beh   # 額外測試查詢特定員工
+    python scripts/preflight_check.py --test-mail kane.beh@company.com   # 額外寄一封測試信
 """
 
 import argparse
@@ -333,6 +335,52 @@ async def check_webhook(settings) -> None:
         record("URL 格式正確", False, "不像是有效的 Teams Webhook URL")
 
 
+async def check_mail(settings, test_mail: str | None) -> None:
+    """Step 9: 檢查 Exchange 自動寄信（可選）。"""
+    print(f"\n{'='*50}")
+    print(f"Step 9: Exchange 自動寄信（可選）")
+    print(f"{'='*50}")
+
+    exchange = {
+        "EXCHANGE_SERVER": getattr(settings, "EXCHANGE_SERVER", ""),
+        "EXCHANGE_USER": getattr(settings, "EXCHANGE_USER", ""),
+        "EXCHANGE_PASSWORD": getattr(settings, "EXCHANGE_PASSWORD", ""),
+        "EXCHANGE_EMAIL": getattr(settings, "EXCHANGE_EMAIL", ""),
+    }
+    if not any(exchange.values()):
+        record("Exchange 寄信", True, "未設定，跳過（註冊／忘記密碼由管理員手動產生連結）")
+        return
+
+    required = {**exchange, "COMPANY_EMAIL_DOMAIN": settings.COMPANY_EMAIL_DOMAIN}
+    missing = [k for k, v in required.items() if not v]
+    if missing:
+        record("Exchange 設定完整", False, f"缺少 {', '.join(missing)}，設定不完整時不會自動寄信")
+        return
+    record(
+        "Exchange 設定完整", True,
+        f"{settings.EXCHANGE_USER} → 寄件信箱 {settings.EXCHANGE_EMAIL}（{settings.EXCHANGE_SERVER}）",
+    )
+
+    from app.mail.exchange import _get_account, send_mail
+
+    try:
+        build = await asyncio.to_thread(lambda: _get_account().version.build)  # 實際連線並通過 NTLM 驗證
+        record("Exchange 連線與登入", True, f"Exchange build {build}")
+    except Exception as e:
+        lines = str(e).strip().splitlines()
+        record("Exchange 連線與登入", False, f"{type(e).__name__}: {(lines[0] if lines else '')[:150]}")
+        return
+
+    if test_mail:
+        ok, error = await send_mail(
+            test_mail, "【AuthCenter】寄信測試",
+            "<p>這是 AuthCenter preflight_check 寄出的測試信，收到代表自動寄信設定正確。</p>",
+        )
+        record(f"寄送測試信至 {test_mail}", ok, error)
+    else:
+        print(f"  {INFO} 加上 --test-mail <信箱> 可實際寄一封測試信")
+
+
 def print_summary() -> None:
     """印出最終摘要。"""
     print(f"\n{'='*50}")
@@ -359,6 +407,7 @@ def print_summary() -> None:
 async def main():
     parser = argparse.ArgumentParser(description="Auth Center 部署前環境檢查")
     parser.add_argument("--test-user", help="測試查詢特定員工（e.g. kane.beh）")
+    parser.add_argument("--test-mail", help="透過 Exchange 寄一封測試信到指定信箱")
     args = parser.parse_args()
 
     print("\n  Auth Center 環境檢查")
@@ -374,6 +423,7 @@ async def main():
     check_apps_yaml()
     check_admin(settings)
     await check_webhook(settings)
+    await check_mail(settings, args.test_mail)
 
     print_summary()
 

@@ -98,7 +98,7 @@ Auth Center 是一個為內部 AI 應用程式設計的中央認證服務，提�
 - Python 3.11+
 - MSSQL（員工主檔資料庫，需安裝 ODBC Driver）
 - Microsoft Teams Webhook URL（可選，管理員 Channel 通知）
-- Power Automate HTTP 觸發 URL（可選，使用者個人 Teams 通知）
+- 地端 Exchange Server 寄信帳號（可選，自動寄送註冊／重設連結，EWS + NTLM）
 
 ### Step 1：安裝 ODBC Driver（Linux）
 
@@ -191,11 +191,15 @@ PUBLIC_KEY_PATH=D:/project/auth-center/keys/public.pem
 
 # Teams Webhook（可選）
 TEAMS_WEBHOOK_URL=https://your-org.webhook.office.com/webhookb2/xxx
-# 使用者個人通知（Power Automate Flow，可選）
-# TEAMS_USER_WEBHOOK_URL=https://prod-xx.logic.azure.com/workflows/xxx
-# COMPANY_EMAIL_DOMAIN=company.com
 # HTTP Proxy（內網環境需透過 Proxy 連外網時設定）
 # HTTP_PROXY=http://proxy.company.com:8080
+
+# 自動寄信（Exchange EWS，可選，見 Step 4.5）
+# COMPANY_EMAIL_DOMAIN=company.com
+# EXCHANGE_SERVER=mail.company.com
+# EXCHANGE_USER='DOMAIN\username'
+# EXCHANGE_PASSWORD='your_exchange_password'
+# EXCHANGE_EMAIL=noreply@company.com
 
 # Server
 APP_PORT=8000
@@ -210,89 +214,49 @@ SUPER_ADMIN_EMPLOYEES=kane.beh,john.doe
 
 > **注意**：RSA 金鑰路徑建議使用**絕對路徑**，避免在不同目錄啟動時找不到檔案。
 
-### Step 4.5：設定 Teams 使用者通知（可選）
+### Step 4.5：設定自動寄信（可選）
 
-此步驟設定 Power Automate flow，讓系統在管理員產生註冊/重設連結時，自動透過 Teams 1:1 Chat 發送給使用者。若不設定，行為與原本相同（管理員手動轉傳連結）。
+設定後，員工在「申請註冊」或「忘記密碼」時，系統會自動把註冊連結（24 小時有效）或密碼重設連結（6 小時有效）寄到員工的公司信箱，並把寄送結果發到 Teams 管理員 Channel。若不設定，行為與原本相同（Teams 通知管理員，由管理員手動產生連結）。
 
-#### 建立 Power Automate Flow
+寄信使用 Exchange Web Services（EWS）+ NTLM 驗證，適用於地端 Exchange Server，Linux 上可直接使用（不需要 Outlook）。在 `.env` 加入：
 
-1. 前往 [make.powerautomate.com](https://make.powerautomate.com) → **建立** → **自動化雲端流程**
-2. 觸發條件搜尋「**When an HTTP request is received**」
-3. Request Body JSON Schema 填入：
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "email": { "type": "string" },
-    "title": { "type": "string" },
-    "body": { "type": "string" }
-  },
-  "required": ["email", "title", "body"]
-}
+```env
+# 收件信箱 = <nt_account>@<COMPANY_EMAIL_DOMAIN>
+COMPANY_EMAIL_DOMAIN=company.com
+# Exchange 主機（連線 https://<主機>/EWS/Exchange.asmx）
+EXCHANGE_SERVER=mail.company.com
+# NTLM 帳號（DOMAIN\username 或 UPN）與密碼，請用單引號包住
+EXCHANGE_USER='DOMAIN\username'
+EXCHANGE_PASSWORD='your_exchange_password'
+# 寄件信箱
+EXCHANGE_EMAIL=noreply@company.com
 ```
 
-4. 新增動作：搜尋「**Microsoft Teams**」→「**Post card in a chat or channel**」
+> - 以上 5 項都設定才會啟用自動寄信。
+> - **帳號與密碼請用單引號包住**：systemd 的 `EnvironmentFile` 會把沒加引號的 `DOMAIN\username` 解析成 `DOMAINusername`。也不要在同一行後面加註解（systemd 會把註解當成值的一部分）。
+> - 正式環境建議使用專用服務帳號；若 `EXCHANGE_USER` 與 `EXCHANGE_EMAIL` 不是同一個信箱，登入帳號需要該信箱的「傳送為（Send As）」權限。
+> - 若服務有設定 `HTTPS_PROXY`，請把 Exchange 主機加進 `NO_PROXY`。
 
-| 欄位 | 設定值 |
-|---|---|
-| Post as | Flow bot |
-| Post in | Chat with Flow bot |
-| Recipient | 動態內容 → `email` |
-| Adaptive Card | 見下方 JSON |
-
-5. Adaptive Card 欄位（切換到程式碼檢視）：
-
-```json
-{
-  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-  "type": "AdaptiveCard",
-  "version": "1.4",
-  "body": [
-    {
-      "type": "TextBlock",
-      "size": "Large",
-      "weight": "Bolder",
-      "text": "@{triggerBody()?['title']}"
-    },
-    {
-      "type": "TextBlock",
-      "text": "@{triggerBody()?['body']}",
-      "wrap": true
-    }
-  ]
-}
-```
-
-6. **儲存**，回到觸發條件步驟，複製「HTTP POST URL」
-7. 將 URL 和公司 Email 域名加入 `.env`：
+先在主機上確認連得到 EWS（輸入密碼後印出 `200`，代表網路、憑證與帳密都正確）：
 
 ```bash
-TEAMS_USER_WEBHOOK_URL=https://prod-xx.westus.logic.azure.com/workflows/xxx/...
-COMPANY_EMAIL_DOMAIN=company.com
+curl --ntlm -u 'DOMAIN\username' -o /dev/null -w '%{http_code}\n' https://mail.company.com/EWS/Exchange.asmx
 ```
 
-> `nt_account` + `COMPANY_EMAIL_DOMAIN` 會組合成 email（如 `kane.beh@company.com`），Power Automate 以此找到 Teams 使用者。
+再用 Preflight Check 實際寄一封測試信：
+
+```bash
+python scripts/preflight_check.py --test-mail your.name@company.com
+```
 
 #### 運作方式
 
-管理員產生連結時，系統會：
-
-1. 嘗試透過 Power Automate 發送到使用者的 **Teams 1:1 Chat**（來自 Flow Bot）
-2. 在管理員 **Channel** 發送通知，附上投遞狀態：
-   - `✅ 已發送` — 使用者已在 Teams 收到連結
-   - `❌ 未發送（需手動轉傳）` — Power Automate 未設定或發送失敗
-
-使用者收到的訊息範例（來自 Power Automate / Flow Bot）：
-
-```
-🔑 密碼重設連結
-
-管理員已為您產生密碼重設連結（6 小時內有效）：
-http://auth.company.com/auth/reset-password?token=abc123...
-
-如有問題請聯繫系統管理員。
-```
+1. 員工送出申請後，系統產生一次性連結，寄到 `<nt_account>@<COMPANY_EMAIL_DOMAIN>`。只有收得到信的本人能完成註冊或重設密碼。
+2. Teams 管理員 Channel 收到寄送結果（**不含連結本身**）：
+   - `📧 已自動寄送註冊連結` / `📧 已自動寄送密碼重設連結`：管理員無需處理
+   - `⚠️ 註冊連結自動寄送失敗` / `⚠️ 密碼重設連結自動寄送失敗`：附錯誤摘要，請管理員到 Dashboard（註冊）或會員管理（重設密碼）手動產生連結
+3. 同一員工同類型連結 5 分鐘內只寄一次，避免信箱被灌爆；重新寄送後，舊連結自動失效。
+4. 登入頁「尚未註冊」畫面上的 token 只能用來送出申請，不能直接開啟註冊頁設定密碼。
 
 ### Step 5：環境檢查（Preflight Check）
 
@@ -392,9 +356,12 @@ http_proxy="http://proxy.company.local:8080" bash deploy/setup.sh
 | `PRIVATE_KEY_PATH` | RS256 私鑰路徑 | `./keys/private.pem` | * |
 | `PUBLIC_KEY_PATH` | RS256 公鑰路徑 | `./keys/public.pem` | * |
 | `TEAMS_WEBHOOK_URL` | Teams 管理員 Channel Webhook URL | — | |
-| `TEAMS_USER_WEBHOOK_URL` | Teams 使用者個人通知 Power Automate URL | — | |
-| `COMPANY_EMAIL_DOMAIN` | 公司 Email 域名（nt_account → email，用於 Teams 通知及 OIDC `email` claim） | — | |
+| `COMPANY_EMAIL_DOMAIN` | 公司 Email 域名（nt_account → email，用於自動寄信收件信箱及 OIDC `email` claim） | — | |
 | `HTTP_PROXY` | HTTP Proxy（內網環境透過 Proxy 發送 Webhook） | — | |
+| `EXCHANGE_SERVER` | 自動寄信：Exchange 主機（EWS） | — | |
+| `EXCHANGE_USER` | 自動寄信：NTLM 帳號（`DOMAIN\username` 或 UPN，請用單引號包住） | — | |
+| `EXCHANGE_PASSWORD` | 自動寄信：Exchange 密碼 | — | |
+| `EXCHANGE_EMAIL` | 自動寄信：寄件信箱 | — | |
 | `APP_PORT` | 服務監聽埠 | `8000` | |
 | `AUTH_CENTER_BASE_URL` | Auth Center 對外 URL | `http://localhost:8000` | |
 | `ADMIN_USERNAME` | Super Admin 帳號 | `admin` | * |
@@ -706,7 +673,7 @@ sequenceDiagram
 | ④ | 檢查 App 存取權限 | `allowed_orgs` + `user_app_permissions` | 回傳「組織無權」或「無存取權限」(403) |
 | ⑤ | 產生 Authorization Code | SQLite `auth_codes` 表（5 分鐘 TTL） | — |
 
-### 分支流程：首次登入（管理員審核註冊）
+### 分支流程：首次登入（自動寄送註冊連結）
 
 ```mermaid
 sequenceDiagram
@@ -714,8 +681,8 @@ sequenceDiagram
     participant C as Auth Center
     participant M as MSSQL
     participant S as SQLite
+    participant E as Exchange
     participant T as Microsoft Teams
-    participant A as 管理員
 
     U->>C: POST /auth/login {employee_name, password}
     C->>M: 查詢員工
@@ -723,27 +690,19 @@ sequenceDiagram
     C->>S: 查詢帳號
     S-->>C: 帳號不存在 ✗
 
-    C->>S: 產生 registration token（10 分鐘有效）
+    C->>S: 產生 request token（只能送出申請，不能設定密碼）
     C-->>U: 顯示「尚未註冊」確認頁
 
-    Note over U: 使用者點擊「前往註冊」按鈕
-    U->>C: GET /auth/register-request?token=xxx
+    Note over U: 使用者點擊「申請註冊」
+    U->>C: POST /auth/request-register {token}
+    C->>S: 產生 register token（24 小時有效）
+    C->>E: 寄註冊連結到 nt_account@COMPANY_EMAIL_DOMAIN
+    E-->>C: 寄送成功 / 失敗
+    C->>T: 回報寄送結果（不含連結）
+    C-->>U: 「註冊連結已寄到 xxx@company.com」
 
-    Note over U,C: 使用者填寫身份驗證資訊
-    U->>C: POST /auth/register-request {extension, org_id, token}
-    C->>M: 查詢員工資料（含分機、組織代碼）
-    M-->>C: 回傳 staff info
-    C->>C: 核對分機號碼與組織代碼
-    C->>T: 發送 Adaptive Card 通知
-    T-->>C: 200 OK
-    C-->>U: 「身份驗證通過，已通知管理員。」
-
-    Note over A: 管理員收到 Teams 通知
-    A->>A: python scripts/generate_register_link.py kane.beh
-    A->>U: 將註冊連結發送至員工信箱（手動）
-
-    Note over U,C: 員工收到信件，點擊註冊連結
-    U->>C: GET /auth/register?token=yyy（24 小時有效）
+    Note over U,C: 員工收信，點擊註冊連結
+    U->>C: GET /auth/register?token=yyy
     U->>C: POST /auth/register {password, confirm_password}
     C->>S: INSERT user_accounts（bcrypt 雜湊密碼）
     S-->>C: 帳號建立成功
@@ -751,6 +710,9 @@ sequenceDiagram
     C-->>U: 303 重導回 /auth/login（帶 app_id & redirect_uri）
     Note over U,C: 使用者重新輸入帳密，走主流程
 ```
+
+- **寄送失敗**：作廢未送達的連結，Teams 通知管理員到 Dashboard「待處理的註冊請求」手動產生註冊連結。
+- **未設定自動寄信**：`POST /auth/request-register` 改為發送 Teams 通知，由管理員在 Dashboard 產生註冊連結（或執行 `python scripts/generate_register_link.py`）並轉交員工。
 
 ### 分支流程：驗證失敗
 
@@ -783,33 +745,18 @@ sequenceDiagram
     participant U as 使用者瀏覽器
     participant C as Auth Center
     participant M as MSSQL
+    participant S as SQLite
+    participant E as Exchange
     participant T as Microsoft Teams
-    participant A as 管理員
-
-    U->>C: GET /auth/forgot-password
-    C-->>U: 回傳忘記密碼頁面
 
     U->>C: POST /auth/forgot-password {employee_name}
-    C->>M: 查詢員工資料
-    M-->>C: 回傳 org_id, extension
-    C->>T: POST Webhook（Adaptive Card）
-    Note over T: 通知內容：使用者名稱、組織代碼
-    T-->>C: 200 OK
-    C-->>U: 「已通知管理員，請等待處理。」
-
-    Note over A: 管理員收到 Teams 通知
-    A->>C: POST /admin/generate-reset-link {employee_name}
-    Note over C: 產生重設連結（6 小時有效）
-
-    C->>T: POST Power Automate（使用者 1:1 Chat）
-    Note over T: 發送重設連結給 employee_name@company.com
-    T-->>C: 200 OK / 失敗
-
-    C->>T: POST Webhook（管理員 Channel）
-    Note over T: 通知管理員：連結已產生<br/>+ 使用者 Teams 通知狀態（✅/❌）
-
-    C-->>A: 302 → /admin/users?show_reset_link=xxx
-    Note over A: 頁面顯示重設連結卡片（含複製按鈕）<br/>如使用者通知失敗，管理員手動轉傳
+    C->>M: 查詢員工
+    C->>S: 確認帳號已註冊
+    C->>S: 產生 reset token（6 小時有效）
+    C->>E: 寄重設連結到 nt_account@COMPANY_EMAIL_DOMAIN
+    E-->>C: 寄送成功 / 失敗
+    C->>T: 回報寄送結果（不含連結）
+    C-->>U: 「密碼重設連結已寄到 xxx@company.com」
 
     U->>C: GET /auth/reset-password?token=xxx
     C-->>U: 回傳重設密碼頁面（設定新密碼表單）
@@ -817,6 +764,9 @@ sequenceDiagram
     Note over C: 驗證 token → 更新密碼 → 銷毀 token
     C-->>U: 「密碼重設成功！」
 ```
+
+- **寄送失敗**：作廢未送達的連結，Teams 通知管理員到「會員管理」點擊「重設密碼」手動產生連結。
+- **未設定自動寄信**：`POST /auth/forgot-password` 改為發送 Teams 通知，由管理員產生重設連結並轉交員工。
 
 ### Authorization Code 說明
 
@@ -1136,7 +1086,7 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 
 路徑：`/auth/forgot-password`（使用者申請）→ `/auth/reset-password?token=X`（使用者重設）
 
-使用者填寫 employee_name 後，系統透過 Teams Webhook 通知管理員。管理員在會員管理頁面點擊「重設密碼」產生一次性連結（6 小時有效）。系統會嘗試透過 Power Automate 直接發送連結給使用者的 Teams 1:1 Chat，同時在管理員 Channel 顯示投遞狀態（✅ 已發送 / ❌ 未發送）。若使用者通知失敗，管理員可手動複製連結傳送。
+使用者填寫 employee_name 後，系統自動把一次性重設連結（6 小時有效）寄到使用者的公司信箱，並在 Teams 管理員 Channel 回報寄送結果（見 [Step 4.5](#step-45設定自動寄信可選)）。寄送失敗或未設定自動寄信時，系統改為通知管理員，由管理員在會員管理頁面點擊「重設密碼」產生連結並轉交。
 
 ### 權限模型（Per-User-Per-App Level）
 
@@ -1179,15 +1129,16 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 |------|------|------|
 | `GET` | `/auth/login?app_id=X&redirect_uri=Y` | 渲染登入頁面 |
 | `POST` | `/auth/login` | 提交登入表單，成功後 302 帶 code 回 App |
-| `GET` | `/auth/register-request?token=X` | 渲染身份驗證頁面（分機 + 組織代碼） |
-| `POST` | `/auth/register-request` | 提交身份驗證，通過後觸發 Teams Webhook |
-| `GET` | `/auth/register?token=X` | 渲染註冊頁面（管理員產生的連結） |
+| `GET` | `/auth/pre-register` | 渲染預註冊頁面（輸入使用者名稱） |
+| `POST` | `/auth/pre-register` | 確認員工存在且尚未註冊，顯示申請註冊頁 |
+| `POST` | `/auth/request-register` | 申請註冊：自動寄註冊連結到員工信箱（未設定自動寄信時通知管理員） |
+| `GET` | `/auth/register?token=X` | 渲染註冊頁面（信中或管理員產生的連結） |
 | `POST` | `/auth/register` | 提交註冊（設定密碼） |
 | `POST` | `/auth/token` | App 後端用 code + client_secret 換取 JWT |
 | `GET` | `/auth/change-password` | 渲染修改密碼頁面（需 JWT Cookie） |
 | `POST` | `/auth/change-password` | 提交修改密碼 |
 | `GET` | `/auth/forgot-password` | 渲染忘記密碼頁面 |
-| `POST` | `/auth/forgot-password` | 觸發 Teams Webhook 通知管理員 |
+| `POST` | `/auth/forgot-password` | 自動寄重設連結到員工信箱（未設定自動寄信時通知管理員） |
 | `GET` | `/auth/reset-password?token=X` | 渲染重設密碼頁面（一次性連結） |
 | `POST` | `/auth/reset-password` | 提交新密碼（驗證 token 後更新） |
 | `GET` | `/auth/dashboard` | 使用者 Dashboard（需 JWT Cookie） |
@@ -1364,7 +1315,8 @@ JWT header 包含 `kid` 以對應 JWKS 中的公鑰：`{"alg": "RS256", "typ": "
 | `employee_name` | VARCHAR(50) | 使用者名稱 |
 | `app_id` | VARCHAR(100) | 來源 App（可為空） |
 | `redirect_uri` | TEXT | 註冊完成後的導回 URI |
-| `expires_at` | REAL | 過期時間（登入產生 10 分鐘 / 管理員產生 24 小時） |
+| `expires_at` | REAL | 過期時間（Unix timestamp，24 小時） |
+| `purpose` | VARCHAR(16) | `request`：登入頁產生，只能送出註冊申請；`register`：寄到信箱或管理員產生的連結，才能設定密碼 |
 
 **`password_reset_tokens`** — 密碼重設令牌
 
@@ -1422,9 +1374,26 @@ JWT header 包含 `kid` 以對應 JWKS 中的公鑰：`{"alg": "RS256", "typ": "
 
 除了 Web 管理後台，也提供命令列工具：
 
+### 備份 SQLite（可在服務運行中執行）
+
+使用 SQLite Online Backup API 取得一致的快照，不需停機，WAL 中尚未寫回主檔的資料也會一併備份。請勿直接 `cp` 正在使用中的 `.db` 檔。
+
+```bash
+# 備份 .env 的 SQLITE_PATH 到 backups/（檔名自動加時間戳記）
+python scripts/backup_sqlite.py
+
+# 指定來源與輸出目錄，只保留最新 14 份（適合 cron）
+python scripts/backup_sqlite.py --db data/auth_local.db --output /mnt/backup/ --keep 14
+
+# 升級前備份成指定檔名
+python scripts/backup_sqlite.py --output backups/before-upgrade.db
+```
+
+還原時必須先停止服務，覆蓋 `.db` 後**刪除舊的 `-wal`、`-shm` 檔**再啟動。
+
 ### 產生註冊連結
 
-當 Teams 收到新員工註冊請求後，管理員核對身份後執行：
+未設定自動寄信，或自動寄送失敗時，管理員核對身份後執行：
 
 ```bash
 # 基本用法
@@ -1593,6 +1562,7 @@ sequenceDiagram
     participant U as 使用者瀏覽器
     participant P as OAuth2 Proxy
     participant C as Auth Center (OIDC)
+    participant E as Exchange
     participant T as Microsoft Teams
 
     U->>P: 訪問受保護服務
@@ -1604,9 +1574,10 @@ sequenceDiagram
     C-->>U: 顯示「尚未註冊」確認頁
     Note over U,C: login_url 指回 /oidc/authorize?...&state=S&nonce=N<br/>確保註冊完成後回到 OIDC 流程
 
-    U->>C: POST /auth/request-register（發送 Teams 通知）
-    C->>T: 發送 Adaptive Card 通知管理員
-    Note over U: 等待管理員審核、收到註冊連結、完成註冊
+    U->>C: POST /auth/request-register
+    C->>E: 寄註冊連結到員工信箱
+    C->>T: 回報寄送結果給管理員
+    Note over U: 收信、點擊註冊連結、完成註冊
 
     U->>P: 重新訪問受保護服務
     P-->>U: 302 → /oidc/authorize?...（重新發起 OIDC 流程）
@@ -1850,6 +1821,9 @@ auth-center/
 │   ├── oidc/
 │   │   ├── routes.py        # OIDC 端點（discovery, authorize, token, userinfo）
 │   │   └── jwks.py          # PEM → JWK Set 轉換
+│   ├── mail/
+│   │   ├── exchange.py      # Exchange（EWS）寄信
+│   │   └── links.py         # 自動寄送註冊／重設連結並回報 Teams
 │   ├── webhook/
 │   │   └── teams.py         # Teams Webhook 通知
 │   └── templates/           # Jinja2 前端模板
@@ -1863,7 +1837,8 @@ auth-center/
 │       ├── admin_permissions.html # 使用者權限管理
 │       ├── admin_access_log.html  # App 存取紀錄
 │       ├── admin_audit_log.html   # 操作紀錄
-│       └── admin_guide.html       # 使用指南
+│       ├── admin_guide.html       # 使用指南
+│       └── email/                 # 郵件範本（註冊連結、重設連結）
 ├── config/
 │   └── apps.yaml.example   # App 註冊表範本（cp 為 apps.yaml 使用）
 ├── deploy/
@@ -1873,6 +1848,8 @@ auth-center/
 ├── keys/                    # RSA 金鑰對（gitignore）
 ├── scripts/
 │   ├── init_db.sql                # SQLite 表結構
+│   ├── backup_sqlite.py           # CLI：線上備份 SQLite
+│   ├── preflight_check.py         # 部署前環境檢查
 │   ├── reset_password.py          # CLI：重設使用者密碼
 │   ├── generate_register_link.py  # CLI：產生註冊連結
 │   └── manage_permissions.py      # CLI：管理使用者 App 權限
@@ -1908,7 +1885,7 @@ auth-center/
 | **管理** | Super Admin / App Admin 兩層後台、App CRUD、權限與會員管理、存取紀錄、稽核紀錄 |
 | **使用者** | 登入、Dashboard、註冊（邀請連結或申請審核）、修改密碼、忘記密碼重設 |
 | **資料來源** | MSSQL 員工主檔（唯讀，ODBC Driver 17）＋ SQLite 本地認證資料（WAL） |
-| **通知** | Teams Webhook（管理員 Channel）＋ Power Automate 使用者 1:1 Chat（可選） |
+| **通知** | Teams Webhook（管理員 Channel）＋ Exchange 自動寄送註冊／重設連結（可選） |
 | **部署** | Python 3.11+、`fastapi run`、Docker / docker-compose、systemd + nginx 一鍵腳本、`/health` 探針、Preflight Check |
 
 ### 本版尚未支援

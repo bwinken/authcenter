@@ -48,6 +48,13 @@ class Settings:
     # HTTP Proxy (for outbound requests like Teams Webhook)
     HTTP_PROXY: str = os.getenv("HTTP_PROXY", "")
 
+    # Exchange 寄信（EWS + NTLM）：設定齊全（含 COMPANY_EMAIL_DOMAIN）時，
+    # 註冊申請與忘記密碼會自動把連結寄到員工信箱
+    EXCHANGE_SERVER: str = os.getenv("EXCHANGE_SERVER", "")
+    EXCHANGE_USER: str = os.getenv("EXCHANGE_USER", "")          # DOMAIN\username 或 UPN
+    EXCHANGE_PASSWORD: str = os.getenv("EXCHANGE_PASSWORD", "")
+    EXCHANGE_EMAIL: str = os.getenv("EXCHANGE_EMAIL", "")        # 寄件信箱
+
     # Server
     AUTH_CENTER_BASE_URL: str = os.getenv("AUTH_CENTER_BASE_URL", "http://localhost:8000")
 

@@ -202,6 +202,9 @@
                                 {% if items | length > 1 %}
                                     <span class="badge badge-gray" title="此使用者提交了 {{ items | length }} 次註冊請求">{{ items | length }} 次</span>
                                 {% endif %}
+                                {% if items | selectattr('purpose', 'equalto', 'register') | list %}
+                                    <span class="badge badge-blue" title="已有有效的註冊連結（自動寄出或管理員產生）。重新產生會使舊連結失效。">已產生連結</span>
+                                {% endif %}
                             </td>
                             <td>
                                 {% set app_ids = items | map(attribute='app_id') | select | list | unique | list %}

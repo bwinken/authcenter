@@ -351,14 +351,6 @@ async def oidc_token(
     }
 
 
-def _build_email(nt_account: str) -> str:
-    """以 nt_account + COMPANY_EMAIL_DOMAIN 組合 email（未設定域名時回傳空字串）。"""
-    domain = get_settings().COMPANY_EMAIL_DOMAIN.strip().lstrip("@")
-    if not domain or not nt_account:
-        return ""
-    return f"{nt_account}@{domain}"
-
-
 def _create_id_token(
     sub: str, aud: str, nonce: str, org_id: str, expire_hours: int
 ) -> str:
@@ -379,7 +371,7 @@ def _create_id_token(
         "org_id": org_id,
     }
     # email claim（Langfuse、Grafana 等 OIDC client 以 email 作為使用者唯一識別）
-    email = _build_email(sub)
+    email = service.build_staff_email(sub)
     if email:
         payload["email"] = email
         payload["email_verified"] = True
@@ -414,7 +406,7 @@ async def oidc_userinfo(request: Request):
         "preferred_username": payload["sub"],
         "org_id": payload.get("org_id", ""),
     }
-    email = _build_email(payload["sub"])
+    email = service.build_staff_email(payload["sub"])
     if email:
         claims["email"] = email
         claims["email_verified"] = True

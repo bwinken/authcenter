@@ -47,13 +47,22 @@ async def generate_register_link(
             print("If they need a password reset, use: python scripts/reset_password.py")
             sys.exit(1)
 
-        # Generate token and store in SQLite
+        # 與 Auth Center 啟動時相同的 migration（purpose 欄位），已存在則略過
+        try:
+            await db.execute(
+                "ALTER TABLE registration_tokens ADD COLUMN purpose VARCHAR(16) NOT NULL DEFAULT 'request'"
+            )
+        except aiosqlite.OperationalError:
+            pass  # Column already exists
+
+        # Generate token and store in SQLite（purpose=register 才能用來設定密碼）
         token = secrets.token_urlsafe(48)
         expires_at = time.time() + TOKEN_TTL
 
         await db.execute(
-            "INSERT OR REPLACE INTO registration_tokens (token, employee_name, app_id, redirect_uri, expires_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO registration_tokens "
+            "(token, employee_name, app_id, redirect_uri, expires_at, purpose) "
+            "VALUES (?, ?, ?, ?, ?, 'register')",
             (token, employee_name, app_id, redirect_uri, expires_at),
         )
         await db.commit()

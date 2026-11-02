@@ -1,9 +1,25 @@
 {% extends "base.html" %}
 {% block title %}尚未註冊 - AuthCenter{% endblock %}
 {% block content %}
-    {% if success %}
+    {% if success and mail_status == "sent" %}
         <div class="alert alert-success">
-            已通知管理員，請等待管理員將註冊連結發送至您的信箱。
+            註冊連結已寄到 <strong>{{ mail_to }}</strong>，請在 {{ expire_hours }} 小時內點擊信中的連結設定密碼。
+            <br><br>
+            若沒看到信，請檢查垃圾郵件匣。
+        </div>
+    {% elif success and mail_status == "cooldown" %}
+        <div class="alert alert-info">
+            註冊連結稍早已寄到 <strong>{{ mail_to }}</strong>，請先檢查信箱（含垃圾郵件匣）。
+            <br><br>
+            若仍未收到，請 {{ retry_minutes }} 分鐘後再申請一次。
+        </div>
+    {% elif success %}
+        <div class="alert {% if mail_status == 'failed' %}alert-error{% else %}alert-success{% endif %}">
+            {% if mail_status == "failed" %}
+                註冊連結自動寄送失敗，已通知管理員協助處理。
+            {% else %}
+                已通知管理員，請等待管理員將註冊連結發送至您的信箱。
+            {% endif %}
             <br><br>
             若長時間未收到，請聯繫
             {% if super_admins %}
@@ -19,7 +35,11 @@
         <div class="alert alert-info">
             <strong>{{ employee_name }}</strong> 您好，您尚未建立 AuthCenter 帳號。
         </div>
-        <p class="subtitle">點擊下方按鈕申請註冊，系統將通知管理員為您建立帳號。</p>
+        {% if mail_enabled() %}
+            <p class="subtitle">點擊下方按鈕申請註冊，系統會將註冊連結寄到您的公司信箱。</p>
+        {% else %}
+            <p class="subtitle">點擊下方按鈕申請註冊，系統將通知管理員為您建立帳號。</p>
+        {% endif %}
     {% endif %}
     {% if not success %}
         <form method="POST" action="/auth/request-register">
