@@ -311,7 +311,7 @@ Keycloak 回傳的帳號必須對得上 MSSQL 員工主檔的 `nt_account`。Key
 |-----------------|-----------|
 | `local`（預設，可省略） | AuthCenter 帳號密碼 |
 | `keycloak` | 直接導向 Keycloak；**不接受** AuthCenter 密碼 |
-| `both` | 顯示「使用 Keycloak 登入」按鈕與 AuthCenter 帳密表單，兩者皆可 |
+| `both` | 顯示「使用公司帳號登入」按鈕與 AuthCenter 帳密表單，兩者皆可 |
 
 用 Preflight Check 確認連線與設定：
 
@@ -327,7 +327,8 @@ python scripts/preflight_check.py
 3. 使用者 Dashboard、修改密碼與 Admin 後台仍使用 AuthCenter 密碼；只用 Keycloak 的員工若要使用這些功能，需另外註冊 AuthCenter 帳號。
 4. Keycloak 有自己的登入 session：已在 Keycloak 登入的使用者不會再被要求輸入密碼。AuthCenter 的登出不會登出 Keycloak。
 5. `auth_provider: keycloak` 的 App 在 Keycloak 無法連線、或 `.env` 未設定 Keycloak 時**無法登入**（不會自動退回密碼登入）；需要備援時請用 `both`。
-6. `auth_provider` 填了無法辨識的值時，該 App 會顯示設定錯誤而無法登入，Preflight Check 會列出。
+6. 登入頁對使用者一律顯示「公司帳號」（可用 `KEYCLOAK_DISPLAY_NAME` 修改），不會出現 Keycloak 字樣；Keycloak 自己登入頁的外觀與標題則在 Keycloak 的 Realm 設定（Display name／Theme）調整。
+7. `auth_provider` 填了無法辨識的值時，該 App 會顯示設定錯誤而無法登入，Preflight Check 會列出。
 
 ### Step 5：環境檢查（Preflight Check）
 
@@ -441,7 +442,7 @@ http_proxy="http://proxy.company.local:8080" bash deploy/setup.sh
 | `KEYCLOAK_USERNAME_CLAIM` | Keycloak 登入：用哪個 claim 對應 `nt_account` | `preferred_username` | |
 | `KEYCLOAK_USERNAME_DOMAIN` | Keycloak 登入：claim 值帶網域時填入，網域相符才接受並去掉網域 | — | |
 | `KEYCLOAK_CA_BUNDLE` | Keycloak 登入：內部 CA 憑證（PEM）路徑 | — | |
-| `KEYCLOAK_DISPLAY_NAME` | Keycloak 登入：登入頁按鈕顯示的名稱 | `Keycloak` | |
+| `KEYCLOAK_DISPLAY_NAME` | Keycloak 登入：使用者在登入頁看到的名稱（按鈕顯示「使用<名稱>登入」） | `公司帳號` | |
 | `KEYCLOAK_SCOPE` | Keycloak 登入：向 Keycloak 要求的 scope | `openid profile email` | |
 | `APP_PORT` | 服務監聽埠 | `8000` | |
 | `AUTH_CENTER_BASE_URL` | Auth Center 對外 URL | `http://localhost:8000` | |

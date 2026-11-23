@@ -12,6 +12,7 @@
   或 Admin 後台「App 管理」以 `auth_provider` 逐個 App 指定登入方式：`local`（預設，AuthCenter 密碼）、`keycloak`（僅 Keycloak）、`both`（兩者皆可）。
   AuthCenter 只把身分驗證交給 Keycloak，員工主檔比對、App 權限與 JWT 簽發不變，各 App 不需修改；`/auth/login` 與 `/oidc/authorize` 流程皆支援。
 - Keycloak 帳號與 `nt_account` 的對應可設定：`KEYCLOAK_USERNAME_CLAIM`（預設 `preferred_username`）、`KEYCLOAK_USERNAME_DOMAIN`（claim 值帶網域時使用）。
+- 登入頁對使用者顯示「使用公司帳號登入」（名稱可用 `KEYCLOAK_DISPLAY_NAME` 修改），不出現 Keycloak 字樣。
 - `scripts/preflight_check.py` 新增 Step 10（Keycloak 設定、discovery／JWKS 連線、`auth_provider` 值檢查）。
 - **自動寄送註冊／重設連結**：設定 `EXCHANGE_SERVER`、`EXCHANGE_USER`、`EXCHANGE_PASSWORD`、`EXCHANGE_EMAIL` 與 `COMPANY_EMAIL_DOMAIN` 後，
   員工「申請註冊」或「忘記密碼」時，系統透過 Exchange（EWS + NTLM）把一次性連結寄到 `<nt_account>@<COMPANY_EMAIL_DOMAIN>`，

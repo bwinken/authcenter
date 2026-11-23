@@ -67,8 +67,8 @@ class Settings:
     KEYCLOAK_SCOPE: str = os.getenv("KEYCLOAK_SCOPE", "").strip() or "openid profile email"
     # Keycloak 憑證由內部 CA 簽發時，指向該 CA 的 PEM 檔（會與系統信任的 CA 一併使用）
     KEYCLOAK_CA_BUNDLE: str = os.getenv("KEYCLOAK_CA_BUNDLE", "").strip()
-    # 登入頁按鈕上顯示的名稱
-    KEYCLOAK_DISPLAY_NAME: str = os.getenv("KEYCLOAK_DISPLAY_NAME", "").strip() or "Keycloak"
+    # 使用者在登入頁看到的名稱（按鈕顯示「使用<名稱>登入」）；使用者不需要知道背後是 Keycloak
+    KEYCLOAK_DISPLAY_NAME: str = os.getenv("KEYCLOAK_DISPLAY_NAME", "").strip() or "公司帳號"
 
     # Server
     AUTH_CENTER_BASE_URL: str = os.getenv("AUTH_CENTER_BASE_URL", "http://localhost:8000")

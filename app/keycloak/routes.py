@@ -45,7 +45,7 @@ STATE_TTL = 600                # 使用者在 Keycloak 登入頁最多停留 10 
 BINDING_COOKIE = "kc_login"    # 把 state 綁定在發起登入的瀏覽器，防止 login CSRF
 MAX_PARAM_LENGTH = 4096        # App 帶來的 state / nonce / scope 長度上限
 
-KEYCLOAK_ONLY_MSG = "此應用程式僅支援透過 {name} 登入。"
+KEYCLOAK_ONLY_MSG = "此應用程式僅支援使用{name}登入。"
 LOGIN_UNAVAILABLE_MSG = "此應用程式的登入方式尚未設定完成，請聯繫管理員。"
 
 
@@ -71,7 +71,7 @@ def login_options(
     回傳可直接併入 login.html context 的 dict：
     - allow_local：是否可用 AuthCenter 本地密碼
     - keycloak_url：發起 Keycloak 登入的網址；App 不允許或 Keycloak 未設定時為 None
-    - keycloak_name：按鈕上顯示的名稱
+    - keycloak_name：使用者看到的名稱（KEYCLOAK_DISPLAY_NAME，預設「公司帳號」）
     """
     provider = get_app_auth_provider(app_info) if app_info else AUTH_PROVIDER_LOCAL
     keycloak_url = None
@@ -245,7 +245,7 @@ async def keycloak_start(
         logger.error("Keycloak 登入無法發起 (app={}): {}", app_id, e)
         return _login_page(
             request, pending, app_info,
-            f"目前無法連線至 {options['keycloak_name']}，請稍後再試或聯繫管理員。",
+            f"目前無法使用{options['keycloak_name']}登入，請稍後再試或聯繫管理員。",
         )
 
     response = RedirectResponse(url, status_code=303)

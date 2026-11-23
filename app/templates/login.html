@@ -79,8 +79,8 @@
     {% set show_local = allow_local is not defined or allow_local %}
     {% if not fatal %}
     {% if keycloak_url %}
-        <a href="{{ keycloak_url }}" class="btn btn-primary sso-btn">使用 {{ keycloak_name }} 登入</a>
-        {% if show_local %}<div class="login-divider"><span>或使用 AuthCenter 帳號</span></div>{% endif %}
+        <a href="{{ keycloak_url }}" class="btn btn-primary sso-btn">使用{{ keycloak_name }}登入</a>
+        {% if show_local %}<div class="login-divider"><span>或使用 AuthCenter 帳號密碼</span></div>{% endif %}
     {% endif %}
     {% if show_local %}
     <form method="POST" action="{{ form_action|default('/auth/login') }}">
