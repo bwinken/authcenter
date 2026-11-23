@@ -61,7 +61,7 @@ Each user must have an explicit entry in `user_app_permissions` to access an app
 
 ### Level 3 ↔ App Admin Auto-Sync
 
-Granting Level 3 permission automatically assigns the user as App Admin (`auto_assigned=1`). Downgrading or revoking removes the auto-assigned entry but preserves manually assigned App Admin status. The `app_admins` table has an `auto_assigned` BOOLEAN column to distinguish.
+Granting Level 3 permission automatically assigns the user as App Admin (`auto_assigned=1`). Downgrading or revoking removes the auto-assigned entry but preserves manually assigned App Admin status. Deleting a user (`service.delete_user`) removes everything: account, all permissions, all `app_admins` rows (manual included) and pending tokens. Manual entries can also be removed by a Super Admin on the App Admin list page (`POST /admin/admins/remove`). 會員管理 (`list_users`) lists account-less people who still have permission / app-admin rows (`has_account=False`) so leftovers of resigned staff can be purged. The `app_admins` table has an `auto_assigned` BOOLEAN column to distinguish.
 
 ### Auto Mail (Exchange EWS)
 

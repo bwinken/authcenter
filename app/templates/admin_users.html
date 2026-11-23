@@ -50,7 +50,7 @@
 {% block content %}
     <div class="page-header">
         <h1>會員管理</h1>
-        <p>管理已註冊的 AuthCenter 帳號</p>
+        <p>管理已註冊的 AuthCenter 帳號，以及沒有帳號但仍有權限記錄的使用者</p>
     </div>
     {% if reset_link_info %}
         <div class="admin-card" style="margin-bottom: 16px; border-left: 4px solid #f59e0b;">
@@ -120,6 +120,12 @@
             <div class="stat-value">{{ user_count }}</div>
             <div class="stat-label">已註冊帳號</div>
         </div>
+        {% if no_account_count %}
+        <div class="stat-card">
+            <div class="stat-value">{{ no_account_count }}</div>
+            <div class="stat-label">無帳號（僅有權限記錄）</div>
+        </div>
+        {% endif %}
         <div class="stat-card">
             <div class="stat-value">{{ org_count }}</div>
             <div class="stat-label">組織數</div>
@@ -145,12 +151,19 @@
                         <tbody>
                             {% for user in members %}
                                 <tr>
-                                    <td>{{ user.employee_name }}</td>
+                                    <td>
+                                        {{ user.employee_name }}
+                                        {# has_account 由新版程式提供；沒有帳號的人只有權限或 App Admin 記錄 #}
+                                        {% if user.has_account is defined and not user.has_account %}
+                                            <span class="badge badge-gray" title="沒有 AuthCenter 帳號（例如以公司帳號登入），但仍有權限或 App Admin 記錄">無帳號</span>
+                                        {% endif %}
+                                    </td>
                                     <td style="font-size: 12px; color: var(--text-muted);">
                                         {{ user.created_at or '—' }}
                                     </td>
                                     <td>
                                         <div class="action-forms">
+                                            {% if user.has_account is not defined or user.has_account %}
                                             <form method="POST"
                                                   action="/admin/generate-reset-link"
                                                   style="display: inline;">
@@ -164,6 +177,7 @@
                                                     重設密碼
                                                 </button>
                                             </form>
+                                            {% endif %}
                                             <form method="POST"
                                                   action="/admin/users/delete"
                                                   style="display: inline;">
@@ -173,7 +187,7 @@
                                                        value="{{ user.employee_name }}">
                                                 <button type="submit"
                                                         class="btn btn-danger btn-sm"
-                                                        onclick="return confirm('確定要刪除 {{ user.employee_name }}？此操作會同時移除該帳號的所有權限記錄，且無法復原。')">
+                                                        onclick="return confirm('確定要刪除 {{ user.employee_name }}？此操作會移除帳號、所有 App 權限與 App Admin 記錄，且無法復原。')">
                                                     刪除
                                                 </button>
                                             </form>

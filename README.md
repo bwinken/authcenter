@@ -551,7 +551,8 @@ Dashboard 顯示系統總覽資訊：
 
 前往「**會員管理**」頁面（導覽列 → 會員管理）：
 
-此頁面列出所有已註冊的 AuthCenter 帳號，依**組織代碼**分組展開。
+此頁面列出所有已註冊的 AuthCenter 帳號，依**組織代碼**分組展開。沒有帳號但仍有 App 權限或 App Admin 記錄的人
+（例如以公司帳號／Keycloak 登入的員工）也會列出，標示「無帳號」。員工主檔查不到的人集中在「查無員工資料（可能已離職）」這一組。
 
 **重設密碼：**
 
@@ -564,7 +565,9 @@ Dashboard 顯示系統總覽資訊：
 1. 展開目標組織，找到使用者
 2. 點擊「刪除」→ 確認刪除
 
-> **注意**：刪除帳號會**同時移除**該使用者的所有 App 權限記錄，且無法復原。
+> **注意**：刪除會**同時移除**該使用者的帳號、所有 App 權限、所有 App Admin 記錄（含早期手動指派的）與尚未使用的註冊／重設連結，且無法復原。
+>
+> **清理離職員工**：展開「查無員工資料（可能已離職）」這一組逐一刪除即可。若只想移除某筆早期手動指派的 App Admin 而不刪除使用者，可到「App Admin 列表」點「移除」。
 
 **搜尋：**
 
@@ -1248,9 +1251,9 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `GET` | `/admin/users` | 會員管理頁面 | Super Admin |
 | `POST` | `/admin/generate-reset-link` | 產生密碼重設連結（6hr） | Super Admin |
 | `POST` | `/admin/users/reset-password` | 直接重設使用者密碼（備用） | Super Admin |
-| `POST` | `/admin/users/delete` | 刪除使用者帳號 | Super Admin |
+| `POST` | `/admin/users/delete` | 刪除使用者（帳號、權限、App Admin 記錄） | Super Admin |
 | `POST` | `/admin/admins/assign` | 指定 App Admin | Super Admin |
-| `POST` | `/admin/admins/remove` | 移除 App Admin | Super Admin |
+| `POST` | `/admin/admins/remove` | 移除手動指派的 App Admin（Level 3 自動同步的請調整權限） | Super Admin |
 | `GET` | `/admin/access-log` | 存取紀錄頁面 | Super / App Admin |
 | `GET` | `/admin/audit-log` | 操作紀錄頁面 | Super / App Admin |
 

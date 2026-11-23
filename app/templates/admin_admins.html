@@ -3,7 +3,7 @@
 {% block content %}
     <div class="page-header">
         <h1>App Admin 列表</h1>
-        <p>App Admin 由權限管理頁面的 Level 3（Full Admin）授權自動同步產生，如需新增或移除，請至<a href="/admin/permissions" style="color: var(--primary); font-weight: 500;">權限管理</a>頁面調整。</p>
+        <p>App Admin 由權限管理頁面的 Level 3（Full Admin）授權自動同步產生，如需新增或移除，請至<a href="/admin/permissions" style="color: var(--primary); font-weight: 500;">權限管理</a>頁面調整。{% if is_super %}早期手動指派的記錄可直接在此移除。{% endif %}</p>
     </div>
     <!-- Current App Admins (read-only) -->
     <div class="admin-card">
@@ -16,6 +16,7 @@
                         <th>管理的 App</th>
                         <th>來源</th>
                         <th>指派時間</th>
+                        {% if is_super %}<th>操作</th>{% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -34,6 +35,21 @@
                                 {% endif %}
                             </td>
                             <td style="font-size: 12px; color: var(--text-muted);">{{ aa.assigned_at }}</td>
+                            {% if is_super %}
+                            <td>
+                                {% if aa.auto_assigned %}
+                                    <span style="font-size: 12px; color: var(--text-muted);">至權限管理調整</span>
+                                {% else %}
+                                    <form method="POST" action="/admin/admins/remove" style="display: inline;">
+                                        {{ csrf_input(request) }}
+                                        <input type="hidden" name="employee_name" value="{{ aa.employee_name }}">
+                                        <input type="hidden" name="app_id" value="{{ aa.app_id }}">
+                                        <button type="submit" class="btn btn-danger btn-sm"
+                                                onclick="return confirm('確定要移除這筆 App Admin 記錄？')">移除</button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                            {% endif %}
                         </tr>
                     {% endfor %}
                 </tbody>

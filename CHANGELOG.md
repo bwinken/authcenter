@@ -22,6 +22,13 @@
 - `scripts/backup_sqlite.py`：服務運行中也能安全備份 SQLite（Online Backup API、integrity check、`--keep` 保留份數）。
 - `scripts/preflight_check.py` 新增 Step 9（Exchange 連線檢查）與 `--test-mail` 寄送測試信。
 
+### 修正
+
+- **離職員工刪不掉**：會員管理的「刪除」原本只移除帳號、權限與 Level 3 自動同步的 App Admin，早期手動指派的 App Admin 記錄會留著，
+  而且帳號刪掉後這個人就不再出現在會員管理，殘留記錄無從清除。現在刪除會一併移除所有 App Admin 記錄與未使用的註冊／重設連結；
+  會員管理也會列出沒有帳號但仍有權限或 App Admin 記錄的人（標示「無帳號」），員工主檔查不到的人集中在「查無員工資料（可能已離職）」。
+- 「App Admin 列表」的手動指派記錄新增「移除」按鈕（僅 Super Admin）。
+
 ### 安全性
 
 - 修正：登入頁／預註冊頁「尚未註冊」畫面中的 registration token 可直接用於 `/auth/register` 設定密碼，

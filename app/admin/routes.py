@@ -879,13 +879,15 @@ async def revoke_permission(
 @router.get("/admins", response_class=HTMLResponse)
 async def admins_page(
     request: Request,
+    msg: str = "",
+    err: str = "",
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """App Admin 唯讀列表頁面（Super Admin 或 App Admin）。
+    """App Admin 列表頁面（Super Admin 或 App Admin）。
 
-    App Admin 現已統一由權限管理頁面的 Level 3 授權自動同步產生，
-    此頁面僅供查閱，不再提供手動指派/移除功能。
+    App Admin 由權限管理頁面的 Level 3 授權自動同步產生，此頁面不提供指派功能；
+    早期手動指派、沒有對應 Level 3 權限的記錄，Super Admin 可在此移除。
     """
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
@@ -901,8 +903,48 @@ async def admins_page(
         app_admins = await _list_app_admins(sqlite_session, app_ids=admin_app_ids)
         apps = {k: v for k, v in apps.items() if k in admin_app_ids}
 
-    ctx = _base_ctx(request, admin, "admins", app_admins=app_admins, apps=apps)
+    ctx = _base_ctx(request, admin, "admins", app_admins=app_admins, apps=apps,
+                    success=msg or None, error=err or None)
     return templates.TemplateResponse("admin_admins.html", ctx)
+
+
+@router.post("/admins/remove", response_class=HTMLResponse)
+async def remove_app_admin(
+    request: Request,
+    employee_name: str = Form(...),
+    app_id: str = Form(...),
+    admin_token: str | None = Cookie(default=None),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """移除手動指派的 App Admin 記錄（僅 Super Admin）。
+
+    Level 3 自動同步的記錄不在此移除（降級或撤銷權限時會自動消失）；
+    手動指派的記錄沒有對應的權限可撤銷，只能從這裡移除。
+    """
+    admin = _verify_admin_cookie(admin_token)
+    if admin is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    if not admin.get("is_super"):
+        return _forbidden("僅 Super Admin 可以移除 App Admin。")
+
+    employee_name = service.normalize_employee_name(employee_name)
+    result = await sqlite_session.execute(
+        text(
+            "DELETE FROM app_admins "
+            "WHERE employee_name = :ename AND app_id = :aid AND auto_assigned IS NOT 1"
+        ),
+        {"ename": employee_name, "aid": app_id},
+    )
+    await sqlite_session.commit()
+
+    if result.rowcount > 0:
+        await _log_action(
+            sqlite_session, admin["sub"], "remove_app_admin", target=f"{employee_name}→{app_id}",
+        )
+        qs = urlencode({"msg": f"已移除 {employee_name} 的 App Admin（{app_id}）。"})
+    else:
+        qs = urlencode({"err": "找不到可移除的記錄；Level 3 自動同步的 App Admin 請至權限管理調整。"})
+    return RedirectResponse(f"/admin/admins?{qs}", status_code=303)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1128,11 +1170,11 @@ async def manage_users(
             text(f"SELECT nt_account, org_id FROM {table} WHERE nt_account IN ({placeholders})"),
             params,
         )
-        org_map = {r[0]: r[1] for r in result.fetchall()}
+        org_map = {str(r[0]).strip().lower(): r[1] for r in result.fetchall()}
 
-    # Attach org_id and group by org
+    # Attach org_id and group by org；員工主檔查不到的人（多半已離職）集中在同一組，方便清理
     for u in users:
-        u["org_id"] = org_map.get(u["employee_name"], "未知")
+        u["org_id"] = org_map.get(u["employee_name"], "查無員工資料（可能已離職）")
 
     # Group by org_id
     org_groups: dict[str, list[dict]] = {}
@@ -1142,7 +1184,9 @@ async def manage_users(
     org_groups = dict(sorted(org_groups.items()))
 
     ctx = _base_ctx(request, admin, "users",
-                    org_groups=org_groups, user_count=len(users),
+                    org_groups=org_groups,
+                    user_count=sum(1 for u in users if u["has_account"]),
+                    no_account_count=sum(1 for u in users if not u["has_account"]),
                     org_count=len(org_groups), search=search,
                     reset_password=None,
                     success=msg or None, error=err or None)
@@ -1228,7 +1272,7 @@ async def delete_user_account(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """刪除使用者帳號及其所有權限（僅 Super Admin）。"""
+    """刪除使用者的帳號、所有權限與 App Admin 記錄（僅 Super Admin）。"""
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
@@ -1244,7 +1288,7 @@ async def delete_user_account(
         )
 
     if deleted:
-        qs = urlencode({"msg": f"已刪除 {employee_name} 的帳號與權限記錄。"})
+        qs = urlencode({"msg": f"已刪除 {employee_name} 的帳號、權限與 App Admin 記錄。"})
     else:
         qs = urlencode({"err": f"找不到使用者 {employee_name}"})
     return RedirectResponse(f"/admin/users?{qs}", status_code=303)
