@@ -10,6 +10,7 @@
   7. Super Admin 設定
   8. Teams Webhook（可選）
   9. Exchange 自動寄信（可選）
+  10. Keycloak 登入（可選）
 
 Usage:
     python scripts/preflight_check.py
@@ -381,6 +382,70 @@ async def check_mail(settings, test_mail: str | None) -> None:
         print(f"  {INFO} 加上 --test-mail <信箱> 可實際寄一封測試信")
 
 
+async def check_keycloak(settings) -> None:
+    """Step 10: 檢查 Keycloak 登入（可選）。"""
+    print(f"\n{'='*50}")
+    print(f"Step 10: Keycloak 登入（可選）")
+    print(f"{'='*50}")
+
+    from app.config import AUTH_PROVIDER_BOTH, AUTH_PROVIDER_KEYCLOAK, AUTH_PROVIDERS, get_app_auth_provider
+
+    try:
+        from app.config import load_registered_apps
+        apps = load_registered_apps()
+    except Exception:
+        apps = {}   # apps.yaml 的問題已在 Step 6 回報
+    providers = {app_id: get_app_auth_provider(info) for app_id, info in apps.items()}
+    kc_apps = [a for a, p in providers.items() if p in (AUTH_PROVIDER_KEYCLOAK, AUTH_PROVIDER_BOTH)]
+    kc_only = [a for a, p in providers.items() if p == AUTH_PROVIDER_KEYCLOAK]
+    invalid = {a: p for a, p in providers.items() if p not in AUTH_PROVIDERS}
+    if invalid:
+        record(
+            "apps.yaml auth_provider 值有效", False,
+            f"{invalid} — 只接受 {' / '.join(AUTH_PROVIDERS)}，設定錯誤的 App 無法登入",
+        )
+
+    issuer = getattr(settings, "KEYCLOAK_ISSUER", "")
+    client_id = getattr(settings, "KEYCLOAK_CLIENT_ID", "")
+    if not issuer and not client_id:
+        if kc_only:
+            record("Keycloak 設定", False, f"未設定 KEYCLOAK_ISSUER / KEYCLOAK_CLIENT_ID，但 {kc_only} 只允許 Keycloak 登入（目前無法登入）")
+        else:
+            record("Keycloak 登入", True, "未設定，跳過（所有 App 使用 AuthCenter 密碼登入）")
+        return
+    if not issuer or not client_id:
+        missing = "KEYCLOAK_ISSUER" if not issuer else "KEYCLOAK_CLIENT_ID"
+        record("Keycloak 設定完整", False, f"缺少 {missing}，設定不完整時不會啟用 Keycloak 登入")
+        return
+    record("Keycloak 設定完整", True, f"client_id={client_id}，issuer={issuer}")
+    if not settings.KEYCLOAK_CLIENT_SECRET:
+        print(f"  {WARN} 未設定 KEYCLOAK_CLIENT_SECRET：Keycloak 端的 client 必須是 public client（建議改用 confidential client）")
+
+    from app.keycloak import client as kc
+
+    print(f"  {INFO} 請在 Keycloak client 的 Valid redirect URIs 登記：{kc.callback_url()}")
+    try:
+        discovery = await kc.get_discovery()
+        record("Keycloak discovery", True, discovery["authorization_endpoint"])
+    except kc.KeycloakError as e:
+        record("Keycloak discovery", False, str(e)[:300])
+        return
+    try:
+        jwks = await kc._load_jwks(force=True)
+        record("Keycloak JWKS", True, f"{len(jwks.keys)} 把金鑰")
+    except kc.KeycloakError as e:
+        record("Keycloak JWKS", False, str(e)[:300])
+
+    domain = settings.KEYCLOAK_USERNAME_DOMAIN
+    mapping = f"token 的 {settings.KEYCLOAK_USERNAME_CLAIM}"
+    mapping += f"（需為 <帳號>@{domain}，去掉網域）" if domain else "（原樣）"
+    print(f"  {INFO} 帳號對應：{mapping} → MSSQL nt_account")
+    if kc_apps:
+        print(f"  {INFO} 使用 Keycloak 的 App：{', '.join(kc_apps)}" + (f"（僅 Keycloak：{', '.join(kc_only)}）" if kc_only else ""))
+    else:
+        print(f"  {INFO} 尚無 App 啟用 Keycloak（在 apps.yaml 設定 auth_provider，或到 Admin 後台的 App 管理調整）")
+
+
 def print_summary() -> None:
     """印出最終摘要。"""
     print(f"\n{'='*50}")
@@ -424,6 +489,7 @@ async def main():
     check_admin(settings)
     await check_webhook(settings)
     await check_mail(settings, args.test_mail)
+    await check_keycloak(settings)
 
     print_summary()
 

@@ -653,14 +653,29 @@ async def list_permissions(
 # ─── User Account Management ─────────────────────────────────
 
 async def list_users(sqlite_session: AsyncSession) -> list[dict]:
-    """列出所有已註冊帳號。"""
+    """列出所有使用者：已註冊帳號，以及沒有帳號但仍有權限或 App Admin 記錄的人。
+
+    後者包含透過 Keycloak 登入（不需註冊帳號）的員工，以及帳號已不存在但記錄還留著的人；
+    一併列出才能在會員管理把離職員工的記錄清乾淨。has_account 標示是否有本地帳號。
+    """
     result = await sqlite_session.execute(
-        text("SELECT employee_name, created_at, updated_at FROM user_accounts ORDER BY employee_name")
+        text("SELECT employee_name, created_at, updated_at FROM user_accounts")
     )
-    return [
-        {"employee_name": r[0], "created_at": r[1], "updated_at": r[2]}
+    users = {
+        r[0]: {"employee_name": r[0], "created_at": r[1], "updated_at": r[2], "has_account": True}
         for r in result.fetchall()
-    ]
+    }
+    result = await sqlite_session.execute(
+        text(
+            "SELECT employee_name FROM user_app_permissions "
+            "UNION SELECT employee_name FROM app_admins"
+        )
+    )
+    for (name,) in result.fetchall():
+        users.setdefault(
+            name, {"employee_name": name, "created_at": None, "updated_at": None, "has_account": False}
+        )
+    return sorted(users.values(), key=lambda u: u["employee_name"])
 
 
 async def admin_reset_password(
@@ -681,24 +696,27 @@ async def admin_reset_password(
 
 
 async def delete_user(sqlite_session: AsyncSession, employee_name: str) -> bool:
-    """刪除使用者帳號及其所有權限記錄。"""
+    """刪除使用者的帳號、所有 App 權限、所有 App Admin 記錄與未使用的註冊／重設連結。
+
+    App Admin 記錄不分自動或手動指派一律移除（降級／撤銷權限時才保留手動指派）。
+    沒有本地帳號的人（Keycloak 登入、或只剩殘留記錄）也能刪除；有刪到任何記錄就回傳 True。
+    """
     employee_name = normalize_employee_name(employee_name)
-    await sqlite_session.execute(
-        text("DELETE FROM user_app_permissions WHERE employee_name = :ename"),
-        {"ename": employee_name},
-    )
-    # 刪除使用者時，同步移除自動指派的 App Admin 記錄
-    await sqlite_session.execute(
-        text("DELETE FROM app_admins WHERE employee_name = :ename AND auto_assigned = 1"),
-        {"ename": employee_name},
-    )
-    result = await sqlite_session.execute(
-        text("DELETE FROM user_accounts WHERE employee_name = :ename"),
-        {"ename": employee_name},
-    )
+    params = {"ename": employee_name}
+    deleted = {}
+    for table in ("user_app_permissions", "app_admins", "user_accounts"):
+        result = await sqlite_session.execute(
+            text(f"DELETE FROM {table} WHERE employee_name = :ename"), params,
+        )
+        deleted[table] = result.rowcount
+    # 尚未使用的註冊／重設連結一併作廢
+    for table in ("registration_tokens", "password_reset_tokens"):
+        await sqlite_session.execute(
+            text(f"DELETE FROM {table} WHERE employee_name = :ename"), params,
+        )
     await sqlite_session.commit()
-    logger.info("User deleted by admin: %s (rows=%d)", employee_name, result.rowcount)
-    return result.rowcount > 0
+    logger.info("User deleted by admin: {} (rows={})", employee_name, deleted)
+    return any(deleted.values())
 
 
 async def generate_auth_code(
@@ -796,7 +814,7 @@ async def deny_pending_registration(
 
 
 async def cleanup_expired_tokens(sqlite_session: AsyncSession) -> None:
-    """Remove expired auth codes, registration tokens, and password reset tokens."""
+    """Remove expired auth codes, registration tokens, password reset tokens, and Keycloak login states."""
     now = time.time()
     result1 = await sqlite_session.execute(
         text("DELETE FROM auth_codes WHERE expires_at < :now"), {"now": now},
@@ -807,7 +825,10 @@ async def cleanup_expired_tokens(sqlite_session: AsyncSession) -> None:
     result3 = await sqlite_session.execute(
         text("DELETE FROM password_reset_tokens WHERE expires_at < :now"), {"now": now},
     )
+    result4 = await sqlite_session.execute(
+        text("DELETE FROM keycloak_login_states WHERE expires_at < :now"), {"now": now},
+    )
     await sqlite_session.commit()
-    deleted = result1.rowcount + result2.rowcount + result3.rowcount
+    deleted = result1.rowcount + result2.rowcount + result3.rowcount + result4.rowcount
     if deleted > 0:
         logger.info("Cleaned up %d expired tokens", deleted)

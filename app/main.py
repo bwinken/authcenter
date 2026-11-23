@@ -17,6 +17,8 @@ from app.database import sqlite_engine, mssql_engine, SQLiteSessionLocal
 from app.auth.routes import router as auth_router, init_templates
 from app.admin.routes import router as admin_router
 from app.oidc.routes import router as oidc_router, init_templates as oidc_init_templates
+from app.keycloak.routes import router as keycloak_router, init_templates as keycloak_init_templates
+from app.keycloak.client import is_keycloak_enabled
 from app.auth.service import cleanup_expired_tokens, cleanup_rate_limit_store
 from app.config import load_registered_apps
 from app.csrf import CSRFMiddleware, csrf_input
@@ -200,6 +202,25 @@ async def lifespan(app: FastAPI):
                 created_at      DATETIME     DEFAULT CURRENT_TIMESTAMP
             )
         """))
+        # Keycloak 登入的一次性 state（新表，不更動任何既有資料表）
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS keycloak_login_states (
+                state         VARCHAR(64)  PRIMARY KEY,
+                binding_hash  VARCHAR(64)  NOT NULL,
+                nonce         VARCHAR(64)  NOT NULL,
+                code_verifier VARCHAR(128) NOT NULL,
+                app_id        VARCHAR(100) NOT NULL,
+                redirect_uri  TEXT         NOT NULL,
+                flow          VARCHAR(8)   NOT NULL DEFAULT 'auth',
+                oidc_state    TEXT         DEFAULT '',
+                oidc_nonce    TEXT         DEFAULT '',
+                oidc_scope    TEXT         DEFAULT '',
+                expires_at    REAL         NOT NULL
+            )
+        """))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_kc_states_expires_at ON keycloak_login_states(expires_at)"
+        ))
         # Indexes for efficient expiry cleanup
         await conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_auth_codes_expires_at ON auth_codes(expires_at)"
@@ -267,13 +288,16 @@ templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
 templates.env.globals["csrf_input"] = csrf_input
 templates.env.globals["mail_enabled"] = is_mail_enabled
+templates.env.globals["keycloak_enabled"] = is_keycloak_enabled
 init_templates(templates)
 oidc_init_templates(templates)
+keycloak_init_templates(templates)
 
 # Routes
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(oidc_router)
+app.include_router(keycloak_router)
 
 
 @app.get("/health")

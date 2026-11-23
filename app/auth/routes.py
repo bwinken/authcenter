@@ -20,6 +20,7 @@ from loguru import logger
 from app.webhook.teams import send_forgot_password_notification, send_registration_request_notification
 from app.mail.exchange import is_mail_enabled
 from app.mail.links import mail_register_link, mail_reset_link
+from app.keycloak.routes import LOGIN_UNAVAILABLE_MSG, keycloak_only_message, login_options
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 templates: Jinja2Templates | None = None
@@ -74,12 +75,27 @@ async def login_page(
             "fatal": True,
         })
 
+    # 依 App 的 auth_provider 決定登入方式；只允許 Keycloak 的 App 直接導過去
+    options = login_options(app_info, app_id, redirect_uri)
+    if not options["allow_local"]:
+        if options["keycloak_url"]:
+            return RedirectResponse(options["keycloak_url"], status_code=303)
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "error": LOGIN_UNAVAILABLE_MSG,
+            "app_id": app_id,
+            "redirect_uri": redirect_uri,
+            "app_name": app_info.get("name", app_id),
+            "fatal": True,
+        })
+
     return templates.TemplateResponse("login.html", {
         "request": request,
         "error": None,
         "app_id": app_id,
         "redirect_uri": redirect_uri,
         "app_name": app_info.get("name", app_id),
+        **options,
     })
 
 
@@ -109,6 +125,7 @@ async def login_submit(
     apps = load_registered_apps()
     app_info = apps.get(app_id)
     app_name = app_info.get("name", app_id) if app_info else "Unknown"
+    options = login_options(app_info, app_id, redirect_uri)
 
     def _error_response(error: str):
         return templates.TemplateResponse("login.html", {
@@ -117,6 +134,7 @@ async def login_submit(
             "app_id": app_id,
             "redirect_uri": redirect_uri,
             "app_name": app_name,
+            **options,
         })
 
     # Rate limit check
@@ -128,6 +146,12 @@ async def login_submit(
     # Re-validate app_id and redirect_uri (hidden fields can be tampered)
     if app_info is None or app_info["redirect_uri"] != redirect_uri:
         return _error_response("應用程式驗證失敗，請從 App 重新發起登入。")
+
+    # 只允許 Keycloak 的 App 不接受本地密碼（不能只靠隱藏表單）
+    if not options["allow_local"]:
+        return _error_response(
+            keycloak_only_message() if options["keycloak_url"] else LOGIN_UNAVAILABLE_MSG
+        )
 
     # Authenticate
     staff, error = await service.authenticate(

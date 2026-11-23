@@ -14,7 +14,15 @@ from passlib.hash import bcrypt
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings, load_registered_apps, save_registered_apps
+from app.config import (
+    AUTH_PROVIDER_LOCAL,
+    AUTH_PROVIDERS,
+    get_app_auth_provider,
+    get_settings,
+    load_registered_apps,
+    save_registered_apps,
+)
+from app.keycloak.client import is_keycloak_enabled
 from app.database import get_sqlite_session, get_mssql_session
 from app.auth import service
 from loguru import logger
@@ -505,13 +513,15 @@ async def update_app(
     allowed_orgs: str = Form(default=""),
     default_level: int = Form(default=0),
     token_expire_hours: int = Form(default=12),
+    auth_provider: str = Form(default=""),
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
     mssql_session: AsyncSession = Depends(get_mssql_session),
 ):
     """更新 App 的存取規則（Super Admin 或該 App 的 App Admin）。
 
-    可修改 allowed_orgs、default_level、token_expire_hours、app_url。
+    可修改 allowed_orgs、default_level、token_expire_hours、app_url；
+    登入方式（auth_provider）僅 Super Admin 可修改。
     變更會寫回 config/apps.yaml 並記錄至 audit log。
     App Admin 僅能修改自己管理的 App，且不能刪除 App。
     """
@@ -532,6 +542,20 @@ async def update_app(
     if app_id not in apps:
         ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs, error=f"App '{app_id}' 不存在。")
         return templates.TemplateResponse("admin_apps.html", ctx)
+
+    # 登入方式（Super Admin 可修改）：先驗證再動其他欄位，避免改到一半才報錯
+    old_provider = get_app_auth_provider(apps[app_id])
+    new_provider = auth_provider.strip().lower()
+    provider_changing = admin.get("is_super") and new_provider and new_provider != old_provider
+    if provider_changing:
+        provider_error = ""
+        if new_provider not in AUTH_PROVIDERS:
+            provider_error = f"不支援的登入方式：{new_provider}"
+        elif new_provider != AUTH_PROVIDER_LOCAL and not is_keycloak_enabled():
+            provider_error = "尚未設定 Keycloak（KEYCLOAK_ISSUER / KEYCLOAK_CLIENT_ID），無法啟用 Keycloak 登入。"
+        if provider_error:
+            ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs, error=provider_error)
+            return templates.TemplateResponse("admin_apps.html", ctx)
 
     # Parse allowed_orgs (comma-separated)
     orgs = [d.strip() for d in allowed_orgs.split(",") if d.strip()] if allowed_orgs.strip() else []
@@ -572,11 +596,19 @@ async def update_app(
                 apps[app_id].pop("app_url", None)
             app_url_changed = f", app_url: {old_app_url or '(空)'}→{new_app_url or '(空)'}"
 
+    provider_changed = ""
+    if provider_changing:
+        if new_provider == AUTH_PROVIDER_LOCAL:
+            apps[app_id].pop("auth_provider", None)
+        else:
+            apps[app_id]["auth_provider"] = new_provider
+        provider_changed = f", auth_provider: {old_provider}→{new_provider}"
+
     save_registered_apps(apps)
 
     await _log_action(
         sqlite_session, admin["sub"], "update_app", target=app_id,
-        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}, token_expire_hours: {old_token_hours}→{token_expire_hours}{name_changed}{redirect_uri_changed}{app_url_changed}",
+        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}, token_expire_hours: {old_token_hours}→{token_expire_hours}{name_changed}{redirect_uri_changed}{app_url_changed}{provider_changed}",
 
     )
 
@@ -847,13 +879,15 @@ async def revoke_permission(
 @router.get("/admins", response_class=HTMLResponse)
 async def admins_page(
     request: Request,
+    msg: str = "",
+    err: str = "",
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """App Admin 唯讀列表頁面（Super Admin 或 App Admin）。
+    """App Admin 列表頁面（Super Admin 或 App Admin）。
 
-    App Admin 現已統一由權限管理頁面的 Level 3 授權自動同步產生，
-    此頁面僅供查閱，不再提供手動指派/移除功能。
+    App Admin 由權限管理頁面的 Level 3 授權自動同步產生，此頁面不提供指派功能；
+    早期手動指派、沒有對應 Level 3 權限的記錄，Super Admin 可在此移除。
     """
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
@@ -869,8 +903,48 @@ async def admins_page(
         app_admins = await _list_app_admins(sqlite_session, app_ids=admin_app_ids)
         apps = {k: v for k, v in apps.items() if k in admin_app_ids}
 
-    ctx = _base_ctx(request, admin, "admins", app_admins=app_admins, apps=apps)
+    ctx = _base_ctx(request, admin, "admins", app_admins=app_admins, apps=apps,
+                    success=msg or None, error=err or None)
     return templates.TemplateResponse("admin_admins.html", ctx)
+
+
+@router.post("/admins/remove", response_class=HTMLResponse)
+async def remove_app_admin(
+    request: Request,
+    employee_name: str = Form(...),
+    app_id: str = Form(...),
+    admin_token: str | None = Cookie(default=None),
+    sqlite_session: AsyncSession = Depends(get_sqlite_session),
+):
+    """移除手動指派的 App Admin 記錄（僅 Super Admin）。
+
+    Level 3 自動同步的記錄不在此移除（降級或撤銷權限時會自動消失）；
+    手動指派的記錄沒有對應的權限可撤銷，只能從這裡移除。
+    """
+    admin = _verify_admin_cookie(admin_token)
+    if admin is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    if not admin.get("is_super"):
+        return _forbidden("僅 Super Admin 可以移除 App Admin。")
+
+    employee_name = service.normalize_employee_name(employee_name)
+    result = await sqlite_session.execute(
+        text(
+            "DELETE FROM app_admins "
+            "WHERE employee_name = :ename AND app_id = :aid AND auto_assigned IS NOT 1"
+        ),
+        {"ename": employee_name, "aid": app_id},
+    )
+    await sqlite_session.commit()
+
+    if result.rowcount > 0:
+        await _log_action(
+            sqlite_session, admin["sub"], "remove_app_admin", target=f"{employee_name}→{app_id}",
+        )
+        qs = urlencode({"msg": f"已移除 {employee_name} 的 App Admin（{app_id}）。"})
+    else:
+        qs = urlencode({"err": "找不到可移除的記錄；Level 3 自動同步的 App Admin 請至權限管理調整。"})
+    return RedirectResponse(f"/admin/admins?{qs}", status_code=303)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1096,11 +1170,11 @@ async def manage_users(
             text(f"SELECT nt_account, org_id FROM {table} WHERE nt_account IN ({placeholders})"),
             params,
         )
-        org_map = {r[0]: r[1] for r in result.fetchall()}
+        org_map = {str(r[0]).strip().lower(): r[1] for r in result.fetchall()}
 
-    # Attach org_id and group by org
+    # Attach org_id and group by org；員工主檔查不到的人（多半已離職）集中在同一組，方便清理
     for u in users:
-        u["org_id"] = org_map.get(u["employee_name"], "未知")
+        u["org_id"] = org_map.get(u["employee_name"], "查無員工資料（可能已離職）")
 
     # Group by org_id
     org_groups: dict[str, list[dict]] = {}
@@ -1110,7 +1184,9 @@ async def manage_users(
     org_groups = dict(sorted(org_groups.items()))
 
     ctx = _base_ctx(request, admin, "users",
-                    org_groups=org_groups, user_count=len(users),
+                    org_groups=org_groups,
+                    user_count=sum(1 for u in users if u["has_account"]),
+                    no_account_count=sum(1 for u in users if not u["has_account"]),
                     org_count=len(org_groups), search=search,
                     reset_password=None,
                     success=msg or None, error=err or None)
@@ -1196,7 +1272,7 @@ async def delete_user_account(
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
 ):
-    """刪除使用者帳號及其所有權限（僅 Super Admin）。"""
+    """刪除使用者的帳號、所有權限與 App Admin 記錄（僅 Super Admin）。"""
     admin = _verify_admin_cookie(admin_token)
     if admin is None:
         return RedirectResponse("/admin/login", status_code=303)
@@ -1212,7 +1288,7 @@ async def delete_user_account(
         )
 
     if deleted:
-        qs = urlencode({"msg": f"已刪除 {employee_name} 的帳號與權限記錄。"})
+        qs = urlencode({"msg": f"已刪除 {employee_name} 的帳號、權限與 App Admin 記錄。"})
     else:
         qs = urlencode({"err": f"找不到使用者 {employee_name}"})
     return RedirectResponse(f"/admin/users?{qs}", status_code=303)

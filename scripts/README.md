@@ -74,6 +74,7 @@ python scripts/backup_sqlite.py --output backups/before-upgrade.db
 7. Super Admin 設定
 8. Teams Webhook（可選）
 9. Exchange 自動寄信（可選）
+10. Keycloak 登入（可選）：設定完整性、discovery／JWKS 連線、`apps.yaml` 的 `auth_provider`
 
 ```bash
 python scripts/preflight_check.py

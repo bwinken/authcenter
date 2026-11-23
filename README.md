@@ -258,6 +258,78 @@ python scripts/preflight_check.py --test-mail your.name@company.com
 3. 同一員工同類型連結 5 分鐘內只寄一次，避免信箱被灌爆；重新寄送後，舊連結自動失效。
 4. 登入頁「尚未註冊」畫面上的 token 只能用來送出申請，不能直接開啟註冊頁設定密碼。
 
+### Step 4.6：接上 Keycloak（可選）
+
+設定後，可以**逐個 App 指定**由 Keycloak 驗證使用者身分（例如 Keycloak 已接上公司 AD）。AuthCenter 只把「驗證你是誰」交給 Keycloak，
+員工主檔比對、App 權限（Level / `allowed_orgs`）、Authorization Code 與 JWT 仍由 AuthCenter 處理，**各 App 不需要修改**。
+未設定時所有 App 維持 AuthCenter 密碼登入。
+
+**1. 在 Keycloak 建立 client**
+
+| Keycloak 設定 | 值 |
+|---------------|-----|
+| Client type | OpenID Connect |
+| Client authentication | On（confidential client） |
+| Authentication flow | Standard flow |
+| Valid redirect URIs | `<AUTH_CENTER_BASE_URL>/auth/keycloak/callback` |
+
+**2. 在 `.env` 加入**
+
+```env
+# Realm 的 issuer（開啟 <issuer>/.well-known/openid-configuration 應能看到 JSON）
+KEYCLOAK_ISSUER=https://keycloak.company.com/realms/your-realm
+KEYCLOAK_CLIENT_ID=authcenter
+KEYCLOAK_CLIENT_SECRET='your_keycloak_client_secret'
+```
+
+**3. 確認帳號對應**
+
+Keycloak 回傳的帳號必須對得上 MSSQL 員工主檔的 `nt_account`。Keycloak 接 AD 時，token 的 `preferred_username` 是哪個 AD 屬性
+取決於 Keycloak 的「Username LDAP attribute」設定，請依實際情況調整：
+
+| Keycloak 回傳的值 | `.env` 設定 |
+|-------------------|-------------|
+| `preferred_username` 就是 NT 帳號（`kane.beh`） | 不用設定（預設） |
+| NT 帳號放在自訂 claim（例如用 User Attribute mapper 輸出 `sAMAccountName`） | `KEYCLOAK_USERNAME_CLAIM=<claim 名稱>` |
+| 只有帶網域的值（`kane.beh@company.com`，`email` 或 UPN） | `KEYCLOAK_USERNAME_CLAIM=email`＋`KEYCLOAK_USERNAME_DOMAIN=company.com` |
+
+> - 設定 `KEYCLOAK_USERNAME_DOMAIN` 後，網域不符的帳號一律拒絕，符合的去掉網域後當作 `nt_account`。信箱與 NT 帳號不一致的員工會對不上，建議優先用前兩種方式。
+> - 比對前會轉成小寫。對不到員工主檔時，登入頁會顯示實際收到的帳號，log 也會記錄，方便確認對應是否正確。
+> - Keycloak 憑證由內部 CA 簽發時，設定 `KEYCLOAK_CA_BUNDLE=/path/to/ca.pem`。若服務有設定 `HTTPS_PROXY`，請把 Keycloak 主機加進 `NO_PROXY`。
+
+**4. 指定哪些 App 使用 Keycloak**
+
+到 Admin 後台 →「App 管理」→ 各 App 的「登入方式」（僅 Super Admin），或直接編輯 `config/apps.yaml`：
+
+```yaml
+  - app_id: "my_app"
+    # ...
+    auth_provider: keycloak   # local（預設）／ keycloak ／ both
+```
+
+| `auth_provider` | 登入頁行為 |
+|-----------------|-----------|
+| `local`（預設，可省略） | AuthCenter 帳號密碼 |
+| `keycloak` | 直接導向 Keycloak；**不接受** AuthCenter 密碼 |
+| `both` | 顯示「使用公司帳號登入」按鈕與 AuthCenter 帳密表單，兩者皆可 |
+
+用 Preflight Check 確認連線與設定：
+
+```bash
+python scripts/preflight_check.py
+```
+
+#### 運作方式與注意事項
+
+1. 使用者進入 `auth_provider: keycloak` 的 App 登入頁時被導向 Keycloak；登入後 AuthCenter 驗證 Keycloak 簽發的 id_token，
+   取出帳號 → 查 MSSQL 確認在職 → 檢查 App 權限 → 發 Authorization Code 導回 App。`/auth/login` 與 `/oidc/authorize`（OAuth2 Proxy）兩種流程都支援。
+2. 透過 Keycloak 登入的員工**不需要**註冊 AuthCenter 帳號，但仍需要 App 權限（個人 Level 或組織預設）。
+3. 使用者 Dashboard、修改密碼與 Admin 後台仍使用 AuthCenter 密碼；只用 Keycloak 的員工若要使用這些功能，需另外註冊 AuthCenter 帳號。
+4. Keycloak 有自己的登入 session：已在 Keycloak 登入的使用者不會再被要求輸入密碼。AuthCenter 的登出不會登出 Keycloak。
+5. `auth_provider: keycloak` 的 App 在 Keycloak 無法連線、或 `.env` 未設定 Keycloak 時**無法登入**（不會自動退回密碼登入）；需要備援時請用 `both`。
+6. 登入頁對使用者一律顯示「公司帳號」（可用 `KEYCLOAK_DISPLAY_NAME` 修改），不會出現 Keycloak 字樣；Keycloak 自己登入頁的外觀與標題則在 Keycloak 的 Realm 設定（Display name／Theme）調整。
+7. `auth_provider` 填了無法辨識的值時，該 App 會顯示設定錯誤而無法登入，Preflight Check 會列出。
+
 ### Step 5：環境檢查（Preflight Check）
 
 啟動前建議先跑環境檢查，逐步確認所有元件是否正確設定：
@@ -269,7 +341,7 @@ python scripts/preflight_check.py
 python scripts/preflight_check.py --test-user kane.beh
 ```
 
-會依序檢查 8 個項目：`.env` 環境變數 → ODBC Driver → MSSQL 連線 → SQLite 讀寫 → RSA 金鑰 → apps.yaml → Super Admin → Teams Webhook。每項顯示 `[PASS]` / `[FAIL]`，最後列出所有失敗項目及修正建議。
+會依序檢查 10 個項目：`.env` 環境變數 → ODBC Driver → MSSQL 連線 → SQLite 讀寫 → RSA 金鑰 → apps.yaml → Super Admin → Teams Webhook → Exchange 自動寄信 → Keycloak 登入（後三項可選）。每項顯示 `[PASS]` / `[FAIL]`，最後列出所有失敗項目及修正建議。
 
 ### Step 6：啟動服務
 
@@ -364,6 +436,14 @@ http_proxy="http://proxy.company.local:8080" bash deploy/setup.sh
 | `EXCHANGE_USER` | 自動寄信：NTLM 帳號（`DOMAIN\username` 或 UPN，請用單引號包住） | — | |
 | `EXCHANGE_PASSWORD` | 自動寄信：Exchange 密碼 | — | |
 | `EXCHANGE_EMAIL` | 自動寄信：寄件信箱 | — | |
+| `KEYCLOAK_ISSUER` | Keycloak 登入：Realm 的 issuer URL（`https://<host>/realms/<realm>`） | — | |
+| `KEYCLOAK_CLIENT_ID` | Keycloak 登入：client ID（與 `KEYCLOAK_ISSUER` 都設定才啟用） | — | |
+| `KEYCLOAK_CLIENT_SECRET` | Keycloak 登入：client secret | — | |
+| `KEYCLOAK_USERNAME_CLAIM` | Keycloak 登入：用哪個 claim 對應 `nt_account` | `preferred_username` | |
+| `KEYCLOAK_USERNAME_DOMAIN` | Keycloak 登入：claim 值帶網域時填入，網域相符才接受並去掉網域 | — | |
+| `KEYCLOAK_CA_BUNDLE` | Keycloak 登入：內部 CA 憑證（PEM）路徑 | — | |
+| `KEYCLOAK_DISPLAY_NAME` | Keycloak 登入：使用者在登入頁看到的名稱（按鈕顯示「使用<名稱>登入」） | `公司帳號` | |
+| `KEYCLOAK_SCOPE` | Keycloak 登入：向 Keycloak 要求的 scope | `openid profile email` | |
 | `APP_PORT` | 服務監聽埠 | `8000` | |
 | `AUTH_CENTER_BASE_URL` | Auth Center 對外 URL | `http://localhost:8000` | |
 | `ADMIN_USERNAME` | Super Admin 帳號 | `admin` | * |
@@ -471,7 +551,8 @@ Dashboard 顯示系統總覽資訊：
 
 前往「**會員管理**」頁面（導覽列 → 會員管理）：
 
-此頁面列出所有已註冊的 AuthCenter 帳號，依**組織代碼**分組展開。
+此頁面列出所有已註冊的 AuthCenter 帳號，依**組織代碼**分組展開。沒有帳號但仍有 App 權限或 App Admin 記錄的人
+（例如以公司帳號／Keycloak 登入的員工）也會列出，標示「無帳號」。員工主檔查不到的人集中在「查無員工資料（可能已離職）」這一組。
 
 **重設密碼：**
 
@@ -484,7 +565,9 @@ Dashboard 顯示系統總覽資訊：
 1. 展開目標組織，找到使用者
 2. 點擊「刪除」→ 確認刪除
 
-> **注意**：刪除帳號會**同時移除**該使用者的所有 App 權限記錄，且無法復原。
+> **注意**：刪除會**同時移除**該使用者的帳號、所有 App 權限、所有 App Admin 記錄（含早期手動指派的）與尚未使用的註冊／重設連結，且無法復原。
+>
+> **清理離職員工**：展開「查無員工資料（可能已離職）」這一組逐一刪除即可。若只想移除某筆早期手動指派的 App Admin 而不刪除使用者，可到「App Admin 列表」點「移除」。
 
 **搜尋：**
 
@@ -859,6 +942,7 @@ apps:
 | `allowed_orgs` | 允許的組織代碼清單，空陣列 `[]` = 不限組織 | `[]` |
 | `default_level` | 組織內使用者的預設權限等級（僅 1 或 2，Level 3 須逐人授權），需搭配 `allowed_orgs` 使用 | `0` |
 | `token_expire_hours` | JWT Token 有效時間（小時），可在 Admin 管理介面調整 | `12` |
+| `auth_provider` | 登入方式：`local`（AuthCenter 密碼）／`keycloak`（僅 Keycloak）／`both`，見 [Step 4.6](#step-46接上-keycloak可選) | `local` |
 
 **組織預設權限規則**：
 - 當 `allowed_orgs` 非空且 `default_level > 0` 時，該組織的使用者自動擁有預設權限等級（無需在 `user_app_permissions` 中手動設定）
@@ -1144,6 +1228,8 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `GET` | `/auth/reset-password?token=X` | 渲染重設密碼頁面（一次性連結） |
 | `POST` | `/auth/reset-password` | 提交新密碼（驗證 token 後更新） |
 | `GET` | `/auth/dashboard` | 使用者 Dashboard（需 JWT Cookie） |
+| `GET` | `/auth/keycloak/start?app_id=X&redirect_uri=Y` | 發起 Keycloak 登入（App 的 `auth_provider` 為 `keycloak`／`both` 時由登入頁導向） |
+| `GET` | `/auth/keycloak/callback` | Keycloak 導回：驗證身分後帶 code 回 App |
 
 ### Admin 管理 (`/admin`)
 
@@ -1165,9 +1251,9 @@ async def admin_panel(user: dict = Depends(require_scopes(["read", "admin"]))):
 | `GET` | `/admin/users` | 會員管理頁面 | Super Admin |
 | `POST` | `/admin/generate-reset-link` | 產生密碼重設連結（6hr） | Super Admin |
 | `POST` | `/admin/users/reset-password` | 直接重設使用者密碼（備用） | Super Admin |
-| `POST` | `/admin/users/delete` | 刪除使用者帳號 | Super Admin |
+| `POST` | `/admin/users/delete` | 刪除使用者（帳號、權限、App Admin 記錄） | Super Admin |
 | `POST` | `/admin/admins/assign` | 指定 App Admin | Super Admin |
-| `POST` | `/admin/admins/remove` | 移除 App Admin | Super Admin |
+| `POST` | `/admin/admins/remove` | 移除手動指派的 App Admin（Level 3 自動同步的請調整權限） | Super Admin |
 | `GET` | `/admin/access-log` | 存取紀錄頁面 | Super / App Admin |
 | `GET` | `/admin/audit-log` | 操作紀錄頁面 | Super / App Admin |
 
@@ -1358,6 +1444,17 @@ JWT header 包含 `kid` 以對應 JWKS 中的公鑰：`{"alg": "RS256", "typ": "
 | `app_name` | VARCHAR(200) | App 顯示名稱 |
 | `ip_address` | VARCHAR(45) | 使用者 IP |
 | `created_at` | DATETIME | 存取時間 |
+
+**`keycloak_login_states`** — 進行中的 Keycloak 登入（一次性，10 分鐘過期）
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `state` | VARCHAR(64) PK | 傳給 Keycloak 的 state，導回時取出並刪除 |
+| `binding_hash` | VARCHAR(64) | 發起登入的瀏覽器 cookie 雜湊（防止 login CSRF） |
+| `nonce` / `code_verifier` | VARCHAR | 驗證 id_token 與 PKCE 用 |
+| `app_id` / `redirect_uri` | VARCHAR / TEXT | 登入完成後要回到的 App |
+| `flow` / `oidc_state` / `oidc_nonce` / `oidc_scope` | VARCHAR / TEXT | 從 `/oidc/authorize` 發起時保留的 OIDC 參數 |
+| `expires_at` | REAL | 過期時間（Unix timestamp） |
 
 **`admin_audit_log`** — Admin 操作紀錄
 
@@ -1760,6 +1857,9 @@ flowchart TB
 | **SQLite WAL Mode** | 啟動時自動啟用 WAL journal mode，提升多連線並發讀寫效能 |
 | **Health Check** | `GET /health` 檢查 SQLite + MSSQL 連線狀態，供 Load Balancer 探針使用 |
 | **背景清理** | 過期 token + rate limit 記憶體由背景定時任務（每小時）統一清理 |
+| **Keycloak 登入驗證** | Authorization Code + PKCE（S256）；id_token 以 Keycloak JWKS 驗簽並檢查 `iss`／`aud`／`exp`／`nonce`／`azp`，只接受非對稱演算法 |
+| **Keycloak state 綁定** | 一次性 state 存於 SQLite（`DELETE ... RETURNING`），並以 HttpOnly cookie 綁定發起登入的瀏覽器，防止 login CSRF |
+| **登入方式強制** | `auth_provider: keycloak` 的 App 在伺服器端拒絕本地密碼登入（不只是隱藏表單）；設定無效或 Keycloak 未設定時一律拒絕 |
 
 ---
 
@@ -1823,6 +1923,9 @@ auth-center/
 │   ├── oidc/
 │   │   ├── routes.py        # OIDC 端點（discovery, authorize, token, userinfo）
 │   │   └── jwks.py          # PEM → JWK Set 轉換
+│   ├── keycloak/
+│   │   ├── client.py        # Keycloak OIDC 用戶端（discovery、換 token、驗證 id_token、帳號對應）
+│   │   └── routes.py        # Keycloak 登入流程（/auth/keycloak/start、/callback）
 │   ├── mail/
 │   │   ├── exchange.py      # Exchange（EWS）寄信
 │   │   └── links.py         # 自動寄送註冊／重設連結並回報 Teams
@@ -1886,6 +1989,7 @@ auth-center/
 | **權限** | Per-User-Per-App Level 0–3 自動映射 scopes；`allowed_orgs` 組織限制；`default_level` 組織預設（僅 1、2）；個人權限覆寫組織限制 |
 | **管理** | Super Admin / App Admin 兩層後台、App CRUD、權限與會員管理、存取紀錄、稽核紀錄 |
 | **使用者** | 登入、Dashboard、註冊（邀請連結或申請審核）、修改密碼、忘記密碼重設 |
+| **外部身分提供者** | Keycloak（OIDC，可選）：逐 App 以 `auth_provider` 指定 `local`／`keycloak`／`both` |
 | **資料來源** | MSSQL 員工主檔（唯讀，ODBC Driver 17）＋ SQLite 本地認證資料（WAL） |
 | **通知** | Teams Webhook（管理員 Channel）＋ Exchange 自動寄送註冊／重設連結（可選） |
 | **部署** | Python 3.11+、`fastapi run`、Docker / docker-compose、systemd + nginx 一鍵腳本、`/health` 探針、Preflight Check |
@@ -1899,7 +2003,7 @@ auth-center/
 | **RP-Initiated Logout** | 無 `end_session_endpoint` 與 Front/Back-Channel Logout |
 | **Dynamic Client Registration** | App 需由管理員於 `config/apps.yaml`／Admin 後台註冊 |
 | **MFA / 2FA** | 尚未支援 |
-| **AD / LDAP 直接認證** | 密碼由本地 SQLite 以 bcrypt 保管，MSSQL 僅唯讀比對員工身分 |
+| **AD / LDAP 直接認證** | AuthCenter 不直接連 AD／LDAP；可透過已接 AD 的 Keycloak 登入（見 Step 4.6），本地密碼仍由 SQLite 以 bcrypt 保管 |
 | **其他員工資料來源** | 員工主檔目前僅支援 MSSQL |
 | **DB Migration 工具** | 無 Alembic；表結構於啟動時建立，欄位變更需手動處理 |
 | **單元測試** | 尚無 pytest 套件，僅有整合式 `example_app/security_tests.py` |
