@@ -10,6 +10,8 @@
 #   default_level: org default permission level (1 or 2), 0 = no default
 #   token_expire_hours: JWT token validity in hours, default 12
 #   app_url: app home page URL for Dashboard "前往" button (required for OAuth2 proxy apps)
+#   auth_provider: how users of this app prove who they are (needs KEYCLOAK_* in .env)
+#     local (default) = AuthCenter password, keycloak = Keycloak only, both = either
 #
 # Copy this file to apps.yaml and customize:
 #   cp config/apps.yaml.example config/apps.yaml

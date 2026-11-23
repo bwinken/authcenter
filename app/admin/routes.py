@@ -14,7 +14,15 @@ from passlib.hash import bcrypt
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings, load_registered_apps, save_registered_apps
+from app.config import (
+    AUTH_PROVIDER_LOCAL,
+    AUTH_PROVIDERS,
+    get_app_auth_provider,
+    get_settings,
+    load_registered_apps,
+    save_registered_apps,
+)
+from app.keycloak.client import is_keycloak_enabled
 from app.database import get_sqlite_session, get_mssql_session
 from app.auth import service
 from loguru import logger
@@ -505,13 +513,15 @@ async def update_app(
     allowed_orgs: str = Form(default=""),
     default_level: int = Form(default=0),
     token_expire_hours: int = Form(default=12),
+    auth_provider: str = Form(default=""),
     admin_token: str | None = Cookie(default=None),
     sqlite_session: AsyncSession = Depends(get_sqlite_session),
     mssql_session: AsyncSession = Depends(get_mssql_session),
 ):
     """更新 App 的存取規則（Super Admin 或該 App 的 App Admin）。
 
-    可修改 allowed_orgs、default_level、token_expire_hours、app_url。
+    可修改 allowed_orgs、default_level、token_expire_hours、app_url；
+    登入方式（auth_provider）僅 Super Admin 可修改。
     變更會寫回 config/apps.yaml 並記錄至 audit log。
     App Admin 僅能修改自己管理的 App，且不能刪除 App。
     """
@@ -532,6 +542,20 @@ async def update_app(
     if app_id not in apps:
         ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs, error=f"App '{app_id}' 不存在。")
         return templates.TemplateResponse("admin_apps.html", ctx)
+
+    # 登入方式（Super Admin 可修改）：先驗證再動其他欄位，避免改到一半才報錯
+    old_provider = get_app_auth_provider(apps[app_id])
+    new_provider = auth_provider.strip().lower()
+    provider_changing = admin.get("is_super") and new_provider and new_provider != old_provider
+    if provider_changing:
+        provider_error = ""
+        if new_provider not in AUTH_PROVIDERS:
+            provider_error = f"不支援的登入方式：{new_provider}"
+        elif new_provider != AUTH_PROVIDER_LOCAL and not is_keycloak_enabled():
+            provider_error = "尚未設定 Keycloak（KEYCLOAK_ISSUER / KEYCLOAK_CLIENT_ID），無法啟用 Keycloak 登入。"
+        if provider_error:
+            ctx = _base_ctx(request, admin, "apps", apps=apps, new_secret=None, available_orgs=available_orgs, error=provider_error)
+            return templates.TemplateResponse("admin_apps.html", ctx)
 
     # Parse allowed_orgs (comma-separated)
     orgs = [d.strip() for d in allowed_orgs.split(",") if d.strip()] if allowed_orgs.strip() else []
@@ -572,11 +596,19 @@ async def update_app(
                 apps[app_id].pop("app_url", None)
             app_url_changed = f", app_url: {old_app_url or '(空)'}→{new_app_url or '(空)'}"
 
+    provider_changed = ""
+    if provider_changing:
+        if new_provider == AUTH_PROVIDER_LOCAL:
+            apps[app_id].pop("auth_provider", None)
+        else:
+            apps[app_id]["auth_provider"] = new_provider
+        provider_changed = f", auth_provider: {old_provider}→{new_provider}"
+
     save_registered_apps(apps)
 
     await _log_action(
         sqlite_session, admin["sub"], "update_app", target=app_id,
-        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}, token_expire_hours: {old_token_hours}→{token_expire_hours}{name_changed}{redirect_uri_changed}{app_url_changed}",
+        details=f"allowed_orgs: {old_orgs}→{orgs}, default_level: {old_default_level}→{default_level}, token_expire_hours: {old_token_hours}→{token_expire_hours}{name_changed}{redirect_uri_changed}{app_url_changed}{provider_changed}",
 
     )
 

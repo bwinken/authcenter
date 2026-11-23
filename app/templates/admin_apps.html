@@ -377,6 +377,32 @@
                                            value="{{ info.get('app_url', '') }}"
                                            placeholder="http://sa-help.company.com（選填，用於 Dashboard「前往」按鈕）">
                                 </div>
+                                {# keycloak_enabled 由新版程式提供；部署途中舊版程式載入此模板時整段略過 #}
+                                {% if keycloak_enabled is defined %}
+                                {% set kc_on = keycloak_enabled() %}
+                                {% set provider = (info.get('auth_provider') or 'local') | string | lower %}
+                                <div class="redirect-uri-field" style="margin-top: 6px;">
+                                    <span class="uri-icon"><svg viewBox="0 0 20 20"><path d="M10 2a4 4 0 00-4 4v2H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-1V6a4 4 0 00-4-4zm2 6H8V6a2 2 0 114 0v2z"/></svg></span>
+                                    <label for="auth_provider_{{ aid }}">登入方式</label>
+                                    <select form="form_{{ aid }}" name="auth_provider"
+                                            id="auth_provider_{{ aid }}" class="inline-select" style="width: 240px"
+                                            title="此 App 的使用者用哪種方式驗證身分">
+                                        <option value="local" {% if provider == 'local' %}selected{% endif %}>AuthCenter 密碼</option>
+                                        <option value="keycloak" {% if provider == 'keycloak' %}selected{% elif not kc_on %}disabled{% endif %}>僅 Keycloak</option>
+                                        <option value="both" {% if provider == 'both' %}selected{% elif not kc_on %}disabled{% endif %}>Keycloak 或 AuthCenter 密碼</option>
+                                        {% if provider not in ('local', 'keycloak', 'both') %}
+                                        <option value="{{ provider }}" selected>無效設定：{{ provider }}</option>
+                                        {% endif %}
+                                    </select>
+                                    {% if not kc_on %}
+                                        <span style="font-size: 11px; color: {% if provider == 'local' %}var(--text-muted){% else %}#b91c1c{% endif %};">
+                                            {% if provider == 'local' %}Keycloak 尚未設定（.env 的 KEYCLOAK_ISSUER / KEYCLOAK_CLIENT_ID）{% elif provider == 'both' %}Keycloak 尚未設定，目前只能用 AuthCenter 密碼登入{% else %}Keycloak 尚未設定，此 App 目前無法登入{% endif %}
+                                        </span>
+                                    {% elif provider == 'keycloak' %}
+                                        <span style="font-size: 11px; color: var(--text-muted);">不接受 AuthCenter 密碼；Keycloak 無法連線時此 App 無法登入</span>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endif %}

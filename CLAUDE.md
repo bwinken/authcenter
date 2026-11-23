@@ -41,7 +41,7 @@ MSSQL (IT Master DB) is **read-only** — queries employee records (`nt_account`
 
 ### App Registry
 
-Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` caches by file mtime and hot-reloads on change. `save_registered_apps()` writes back to YAML (used by admin CRUD). Each app has: `app_id`, bcrypt-hashed `client_secret`, `redirect_uri`, `name`, optional `allowed_orgs`, optional `default_level` (org default permission 1–2), optional `token_expire_hours` (JWT validity, default 12), optional `app_url` (home page URL for Dashboard "前往" button — required for OAuth2 proxy apps since `/auth/login` redirect lacks the `state` param that OAuth2 proxy needs for CSRF validation).
+Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` caches by file mtime and hot-reloads on change. `save_registered_apps()` writes back to YAML (used by admin CRUD). Each app has: `app_id`, bcrypt-hashed `client_secret`, `redirect_uri`, `name`, optional `allowed_orgs`, optional `default_level` (org default permission 1–2), optional `token_expire_hours` (JWT validity, default 12), optional `auth_provider` (`local` default / `keycloak` / `both` — see Keycloak Login), optional `app_url` (home page URL for Dashboard "前往" button — required for OAuth2 proxy apps since `/auth/login` redirect lacks the `state` param that OAuth2 proxy needs for CSRF validation).
 
 ### Authentication Flow
 
@@ -50,6 +50,10 @@ Apps are registered in `config/apps.yaml` (not in DB). `load_registered_apps()` 
 ### OIDC Provider
 
 Standard OIDC endpoints in `app/oidc/` for OAuth2 proxy integration. Discovery at `/.well-known/openid-configuration`, JWKS at `/.well-known/jwks.json`, authorize at `/oidc/authorize`, token at `/oidc/token` (returns `access_token` + `id_token`), userinfo at `/oidc/userinfo`. All JWTs (access_token + id_token) use `AUTH_CENTER_BASE_URL` as `iss` and include `kid` header for JWKS key matching. Auth codes store `nonce` for OIDC replay protection. Supports `client_secret_post` and `client_secret_basic`. Token lifetime controlled by per-app `token_expire_hours`; OAuth2 proxy deployments should set `OAUTH2_PROXY_COOKIE_REFRESH` (e.g. `1h`) so the proxy periodically checks the id_token `exp` claim — when the JWT expires, re-authentication is forced without needing to manually sync `cookie-expire`.
+
+### Keycloak Login (optional upstream IdP)
+
+When `KEYCLOAK_ISSUER` + `KEYCLOAK_CLIENT_ID` are set, apps with `auth_provider: keycloak|both` in `apps.yaml` authenticate via Keycloak (`app/keycloak/`). AuthCenter is the relying party: Keycloak only replaces the password step — `verify_staff` (MSSQL), `check_app_access`, auth code and JWT issuance are unchanged, so apps need no changes. Flow: `/auth/login` or `/oidc/authorize` → `GET /auth/keycloak/start` (one-time row in `keycloak_login_states` + `kc_login` browser-binding cookie, PKCE) → Keycloak → `GET /auth/keycloak/callback` (verify id_token via JWKS, map `KEYCLOAK_USERNAME_CLAIM` [+ `KEYCLOAK_USERNAME_DOMAIN`] → `nt_account`) → auth code → app. `login_options()` in `app/keycloak/routes.py` is the single source for what a login page offers; both login POST handlers must keep rejecting local passwords when `allow_local` is false. `keycloak`-only apps fail closed (Keycloak unconfigured/unreachable or unknown `auth_provider` value = no login). Keycloak users need no `user_accounts` row; Dashboard / change-password / Admin still use local passwords.
 
 ### Permission Model (Per-User-Per-App Level)
 
@@ -78,6 +82,8 @@ Super Admin supports two login methods: (1) `.env` fixed credentials (`ADMIN_USE
 - **App access logging**: `app_access_log` table records each token exchange (user, app, IP, timestamp)
 - **Templates**: Jinja2 initialized in `main.py`, passed to routers via `init_templates()`; `mail_enabled()` is a template global. Email templates live in `app/templates/email/`
 - **Logging**: loguru formats with `{}` placeholders — `%s` is NOT substituted (some older log calls still use `%s`)
+- **Schema changes**: production runs on a live SQLite DB with no migration tool — only additive changes in `lifespan` (`CREATE TABLE IF NOT EXISTS`, guarded `ALTER TABLE ADD COLUMN`), and old code must still start against the new schema (rollback)
+- **Templates during deploy**: the old process may render new templates (Jinja auto-reload) — guard new context vars / globals with `is defined`
 - **SQLite backups**: use `scripts/backup_sqlite.py` (Online Backup API); never `cp` the live `.db` (WAL data would be missing). Restore requires deleting stale `-wal`/`-shm`
 
 ## Conventions

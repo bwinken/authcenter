@@ -796,7 +796,7 @@ async def deny_pending_registration(
 
 
 async def cleanup_expired_tokens(sqlite_session: AsyncSession) -> None:
-    """Remove expired auth codes, registration tokens, and password reset tokens."""
+    """Remove expired auth codes, registration tokens, password reset tokens, and Keycloak login states."""
     now = time.time()
     result1 = await sqlite_session.execute(
         text("DELETE FROM auth_codes WHERE expires_at < :now"), {"now": now},
@@ -807,7 +807,10 @@ async def cleanup_expired_tokens(sqlite_session: AsyncSession) -> None:
     result3 = await sqlite_session.execute(
         text("DELETE FROM password_reset_tokens WHERE expires_at < :now"), {"now": now},
     )
+    result4 = await sqlite_session.execute(
+        text("DELETE FROM keycloak_login_states WHERE expires_at < :now"), {"now": now},
+    )
     await sqlite_session.commit()
-    deleted = result1.rowcount + result2.rowcount + result3.rowcount
+    deleted = result1.rowcount + result2.rowcount + result3.rowcount + result4.rowcount
     if deleted > 0:
         logger.info("Cleaned up %d expired tokens", deleted)

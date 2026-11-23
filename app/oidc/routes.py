@@ -22,6 +22,9 @@ from app.database import get_mssql_session, get_sqlite_session
 from app.auth import service
 from app.auth.jwt_handler import create_token, verify_token, ALGORITHM
 from app.oidc.jwks import get_jwks, get_kid
+from app.keycloak.routes import (
+    FLOW_OIDC, LOGIN_UNAVAILABLE_MSG, keycloak_only_message, login_options,
+)
 
 router = APIRouter(tags=["oidc"])
 templates: Jinja2Templates | None = None
@@ -119,6 +122,23 @@ async def oidc_authorize(
             "fatal": True,
         })
 
+    # 依 App 的 auth_provider 決定登入方式；只允許 Keycloak 的 App 直接導過去
+    options = login_options(
+        app_info, client_id, redirect_uri,
+        flow=FLOW_OIDC, oidc_state=state, oidc_nonce=nonce, oidc_scope=scope,
+    )
+    if not options["allow_local"]:
+        if options["keycloak_url"]:
+            return RedirectResponse(options["keycloak_url"], status_code=303)
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "error": LOGIN_UNAVAILABLE_MSG,
+            "app_id": client_id,
+            "redirect_uri": redirect_uri,
+            "app_name": app_info.get("name", client_id),
+            "fatal": True,
+        })
+
     return templates.TemplateResponse("login.html", {
         "request": request,
         "error": None,
@@ -129,6 +149,7 @@ async def oidc_authorize(
         "oidc_state": state,
         "oidc_nonce": nonce,
         "oidc_scope": scope,
+        **options,
     })
 
 
@@ -151,6 +172,10 @@ async def oidc_authorize_submit(
     apps = load_registered_apps()
     app_info = apps.get(app_id)
     app_name = app_info.get("name", app_id) if app_info else "Unknown"
+    options = login_options(
+        app_info, app_id, redirect_uri,
+        flow=FLOW_OIDC, oidc_state=oidc_state, oidc_nonce=oidc_nonce, oidc_scope=oidc_scope,
+    )
 
     def _oidc_login_url() -> str:
         """Build the OIDC authorize URL to redirect back after registration."""
@@ -175,6 +200,7 @@ async def oidc_authorize_submit(
             "oidc_state": oidc_state,
             "oidc_nonce": oidc_nonce,
             "oidc_scope": oidc_scope,
+            **options,
         })
 
     # Rate limit
@@ -185,6 +211,12 @@ async def oidc_authorize_submit(
 
     if app_info is None or app_info["redirect_uri"] != redirect_uri:
         return _error("應用程式驗證失敗，請從 App 重新發起登入。")
+
+    # 只允許 Keycloak 的 App 不接受本地密碼（不能只靠隱藏表單）
+    if not options["allow_local"]:
+        return _error(
+            keycloak_only_message() if options["keycloak_url"] else LOGIN_UNAVAILABLE_MSG
+        )
 
     # Authenticate
     staff, error = await service.authenticate(

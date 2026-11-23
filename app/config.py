@@ -55,6 +55,21 @@ class Settings:
     EXCHANGE_PASSWORD: str = os.getenv("EXCHANGE_PASSWORD", "")
     EXCHANGE_EMAIL: str = os.getenv("EXCHANGE_EMAIL", "")        # 寄件信箱
 
+    # Keycloak（上游 OIDC 身分提供者，可選）：設定 KEYCLOAK_ISSUER 與 KEYCLOAK_CLIENT_ID 後，
+    # 可在 apps.yaml 以 auth_provider 指定哪些 App 改由 Keycloak 驗證身分
+    KEYCLOAK_ISSUER: str = os.getenv("KEYCLOAK_ISSUER", "").strip().rstrip("/")   # https://kc.company.com/realms/<realm>
+    KEYCLOAK_CLIENT_ID: str = os.getenv("KEYCLOAK_CLIENT_ID", "").strip()
+    KEYCLOAK_CLIENT_SECRET: str = os.getenv("KEYCLOAK_CLIENT_SECRET", "")
+    # 用 token 裡的哪個 claim 對應 MSSQL 的 nt_account
+    KEYCLOAK_USERNAME_CLAIM: str = os.getenv("KEYCLOAK_USERNAME_CLAIM", "").strip() or "preferred_username"
+    # claim 值帶網域（如 kane.beh@company.com）時填入該網域：網域相符才接受，並去掉網域後當作 nt_account
+    KEYCLOAK_USERNAME_DOMAIN: str = os.getenv("KEYCLOAK_USERNAME_DOMAIN", "").strip().lstrip("@").lower()
+    KEYCLOAK_SCOPE: str = os.getenv("KEYCLOAK_SCOPE", "").strip() or "openid profile email"
+    # Keycloak 憑證由內部 CA 簽發時，指向該 CA 的 PEM 檔（會與系統信任的 CA 一併使用）
+    KEYCLOAK_CA_BUNDLE: str = os.getenv("KEYCLOAK_CA_BUNDLE", "").strip()
+    # 登入頁按鈕上顯示的名稱
+    KEYCLOAK_DISPLAY_NAME: str = os.getenv("KEYCLOAK_DISPLAY_NAME", "").strip() or "Keycloak"
+
     # Server
     AUTH_CENTER_BASE_URL: str = os.getenv("AUTH_CENTER_BASE_URL", "http://localhost:8000")
 
@@ -95,6 +110,19 @@ def get_settings() -> Settings:
     return Settings()
 
 
+# App 的登入方式（apps.yaml 的 auth_provider）
+AUTH_PROVIDER_LOCAL = "local"         # AuthCenter 本地密碼（預設）
+AUTH_PROVIDER_KEYCLOAK = "keycloak"   # 只能透過 Keycloak
+AUTH_PROVIDER_BOTH = "both"           # 兩者皆可
+AUTH_PROVIDERS = (AUTH_PROVIDER_LOCAL, AUTH_PROVIDER_KEYCLOAK, AUTH_PROVIDER_BOTH)
+
+
+def get_app_auth_provider(app_info: dict) -> str:
+    """回傳 App 的登入方式。未設定視為 local；無法辨識的值原樣回傳（呼叫端視為兩種方式都不允許）。"""
+    value = str(app_info.get("auth_provider") or AUTH_PROVIDER_LOCAL).strip().lower()
+    return value
+
+
 _apps_cache: dict[str, dict] = {}
 _apps_mtime: float = 0.0
 
@@ -122,7 +150,7 @@ def save_registered_apps(apps_dict: dict[str, dict]) -> None:
     apps_list = []
     for app_id, info in apps_dict.items():
         entry = {"app_id": app_id}
-        for key in ("client_secret", "redirect_uri", "name", "allowed_orgs", "default_level", "token_expire_hours", "app_url"):
+        for key in ("client_secret", "redirect_uri", "name", "allowed_orgs", "default_level", "token_expire_hours", "app_url", "auth_provider"):
             if key in info:
                 entry[key] = info[key]
         apps_list.append(entry)

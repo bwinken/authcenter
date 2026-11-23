@@ -8,6 +8,11 @@
 
 ### 新增
 
+- **Keycloak 登入（可選）**：設定 `KEYCLOAK_ISSUER`、`KEYCLOAK_CLIENT_ID`（與 `KEYCLOAK_CLIENT_SECRET`）後，可在 `config/apps.yaml`
+  或 Admin 後台「App 管理」以 `auth_provider` 逐個 App 指定登入方式：`local`（預設，AuthCenter 密碼）、`keycloak`（僅 Keycloak）、`both`（兩者皆可）。
+  AuthCenter 只把身分驗證交給 Keycloak，員工主檔比對、App 權限與 JWT 簽發不變，各 App 不需修改；`/auth/login` 與 `/oidc/authorize` 流程皆支援。
+- Keycloak 帳號與 `nt_account` 的對應可設定：`KEYCLOAK_USERNAME_CLAIM`（預設 `preferred_username`）、`KEYCLOAK_USERNAME_DOMAIN`（claim 值帶網域時使用）。
+- `scripts/preflight_check.py` 新增 Step 10（Keycloak 設定、discovery／JWKS 連線、`auth_provider` 值檢查）。
 - **自動寄送註冊／重設連結**：設定 `EXCHANGE_SERVER`、`EXCHANGE_USER`、`EXCHANGE_PASSWORD`、`EXCHANGE_EMAIL` 與 `COMPANY_EMAIL_DOMAIN` 後，
   員工「申請註冊」或「忘記密碼」時，系統透過 Exchange（EWS + NTLM）把一次性連結寄到 `<nt_account>@<COMPANY_EMAIL_DOMAIN>`，
   並將寄送結果（成功／失敗＋錯誤摘要，不含連結）發到 Teams 管理員 Channel。未設定時維持原本的管理員手動流程。
@@ -26,6 +31,9 @@
 
 - 啟動時自動執行 migration：`registration_tokens` 新增 `purpose` 欄位（只加欄位，不改動其他資料）。
   既有 token 一律視為 `request`，**升級前已產生但尚未使用的註冊連結需重新產生**。
+- 啟動時自動建立新資料表 `keycloak_login_states`（`CREATE TABLE IF NOT EXISTS`，只新增這張表與一個索引，**不更動任何既有資料表與資料**）。
+  未設定 Keycloak 且 `apps.yaml` 沒有 `auth_provider` 時，登入行為與升級前完全相同。退版時舊版程式會忽略這張表，可直接退回。
+- 若退回舊版後又從 Admin 後台儲存 App 設定，舊版不認得 `auth_provider`，該欄位會從 `apps.yaml` 消失（App 變回密碼登入），重新升級後需再設定一次。
 - 新增依賴 `exchangelib`（`uv sync` 或 `pip install -r requirements.txt`）。
 - `deploy/setup.sh` 改為讓 uv 使用系統憑證，避免公司網路的 SSL 檢查導致 `uv sync` 出現 `invalid peer certificate: UnknownIssuer`。
 - 建議升級前先執行 `python scripts/backup_sqlite.py` 備份資料庫。

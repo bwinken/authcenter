@@ -51,6 +51,22 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
     created_at    DATETIME     DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Keycloak 登入的一次性 state（auth_provider 為 keycloak / both 的 App 使用）
+CREATE TABLE IF NOT EXISTS keycloak_login_states (
+    state         VARCHAR(64)  PRIMARY KEY,
+    binding_hash  VARCHAR(64)  NOT NULL,
+    nonce         VARCHAR(64)  NOT NULL,
+    code_verifier VARCHAR(128) NOT NULL,
+    app_id        VARCHAR(100) NOT NULL,
+    redirect_uri  TEXT         NOT NULL,
+    flow          VARCHAR(8)   NOT NULL DEFAULT 'auth',
+    oidc_state    TEXT         DEFAULT '',
+    oidc_nonce    TEXT         DEFAULT '',
+    oidc_scope    TEXT         DEFAULT '',
+    expires_at    REAL         NOT NULL
+);
+
 -- Indexes for efficient expiry cleanup
 CREATE INDEX IF NOT EXISTS idx_auth_codes_expires_at ON auth_codes(expires_at);
 CREATE INDEX IF NOT EXISTS idx_reg_tokens_expires_at ON registration_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_kc_states_expires_at ON keycloak_login_states(expires_at);
